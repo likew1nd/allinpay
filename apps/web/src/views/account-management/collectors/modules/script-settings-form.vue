@@ -2,14 +2,7 @@
 import ReleasePanel from '@/components/custom/release-panel.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
-import {
-  type ScriptBundleVersion,
-  type ScriptSettings,
-  fetchScriptBundleVersion,
-  fetchScriptSettings,
-  notifyScriptUpdate,
-  updateScriptSettings
-} from '@/service/api';
+import { type ScriptSettings, fetchScriptSettings, updateScriptSettings } from '@/service/api';
 import { useAppStore } from '@/store/modules/app';
 import { useAuth } from '@/hooks/business/auth';
 import { $t } from '@/locales';
@@ -24,11 +17,6 @@ let disposed = false;
 // 打码平台密码只保存在输入框，不回显；留空表示保持中心已保存的密码
 const ttshituPassword = ref('');
 const bingtopPassword = ref('');
-
-// 脚本包版本
-const bundleVersion = ref<ScriptBundleVersion | null>(null);
-const bundleVersionLoading = ref(false);
-const notifying = ref(false);
 
 const defaultSettings: ScriptSettings = {
   loginCooldownMinutes: 10,
@@ -144,47 +132,13 @@ async function load() {
   loading.value = true;
   loaded.value = false;
   try {
-    const [settingsResult, versionResult] = await Promise.all([fetchScriptSettings(), fetchScriptBundleVersion()]);
-    if (!disposed) {
-      if (!settingsResult.error) {
-        applySettings(settingsResult.data);
-        loaded.value = true;
-      }
-      if (!versionResult.error) bundleVersion.value = versionResult.data ?? null;
+    const result = await fetchScriptSettings();
+    if (!disposed && !result.error) {
+      applySettings(result.data);
+      loaded.value = true;
     }
   } finally {
     loading.value = false;
-  }
-}
-
-async function refreshBundleVersion() {
-  bundleVersionLoading.value = true;
-  try {
-    const result = await fetchScriptBundleVersion();
-    if (!result.error && !disposed) bundleVersion.value = result.data ?? null;
-  } finally {
-    bundleVersionLoading.value = false;
-  }
-}
-
-async function triggerUpdate() {
-  if (!canSave.value || notifying.value) return;
-  notifying.value = true;
-  try {
-    await ElMessageBox.confirm(
-      '将通知所有采集端 Agent 拉取最新脚本包并重启；离线采集端上线后执行，正在执行巡检的采集端在本轮结束后重启。是否继续？',
-      '远程更新脚本',
-      { type: 'warning', confirmButtonText: '确认更新', cancelButtonText: '取消' }
-    );
-    const result = await notifyScriptUpdate();
-    if (!result.error) {
-      const count = result.data?.notified ?? 0;
-      window.$message?.success(count > 0 ? `已通知 ${count} 个采集端更新脚本` : '没有可通知的采集端');
-    }
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') throw error;
-  } finally {
-    notifying.value = false;
   }
 }
 
@@ -649,64 +603,20 @@ onMounted(load);
             <span class="settings-nav-label">
               <SvgIcon icon="tabler:package" aria-hidden="true" />
               <span>
-                版本与说明
-                <small>脚本更新与状态约定</small>
+                版本与下载
+                <small>Windows 采集端</small>
               </span>
             </span>
           </template>
           <div class="settings-scroll">
             <div class="settings-panel-heading">
-              <h3>版本与说明</h3>
-              <p>查看中心已发布的脚本版本，以及账号状态的识别规则。</p>
+              <h3>Windows 采集端</h3>
             </div>
-            <section class="settings-section mb-16px">
-              <div class="mb-20px flex flex-wrap items-center justify-between gap-12px">
-                <div class="flex flex-wrap items-center gap-12px">
-                  <h4 class="mb-0!">Agent 脚本版本</h4>
-                  <ElTag
-                    v-if="bundleVersion?.version && bundleVersion.version !== '0.0.0'"
-                    type="success"
-                    effect="plain"
-                  >
-                    v{{ bundleVersion.version }}
-                  </ElTag>
-                  <ElTag v-else type="info" effect="plain">尚未发布</ElTag>
-                </div>
-                <ElButton :loading="bundleVersionLoading" @click="refreshBundleVersion">
-                  <template #icon><SvgIcon icon="tabler:refresh" aria-hidden="true" /></template>
-                  刷新版本
-                </ElButton>
-              </div>
-              <ReleasePanel kind="agent" />
-              <dl class="settings-metadata">
-                <div>
-                  <dt>发布时间</dt>
-                  <dd>{{ bundleVersion?.releasedAt ? new Date(bundleVersion.releasedAt).toLocaleString() : '—' }}</dd>
-                </div>
-                <div>
-                  <dt>包校验</dt>
-                  <dd class="font-mono">
-                    {{ bundleVersion?.bundleHash ? bundleVersion.bundleHash.slice(0, 12) + '...' : '—' }}
-                  </dd>
-                </div>
-              </dl>
-              <div class="settings-update">
-                <p class="settings-hint m-0">通知所有在线采集端拉取最新脚本包并重启，正在执行的任务本轮结束后生效。</p>
-                <ElButton
-                  v-if="canSave"
-                  type="primary"
-                  plain
-                  :loading="notifying"
-                  :disabled="!bundleVersion?.version || bundleVersion.version === '0.0.0'"
-                  @click="triggerUpdate"
-                >
-                  <template #icon><SvgIcon icon="tabler:cloud-download" aria-hidden="true" /></template>
-                  远程通知 Agent 更新
-                </ElButton>
-              </div>
-            </section>
             <section class="settings-section">
-              <h4>状态识别约定</h4>
+              <ReleasePanel v-if="activeTab === 'version'" kind="agent" />
+            </section>
+            <details class="settings-help mt-16px">
+              <summary>账号状态识别规则</summary>
               <div class="settings-state-row">
                 <ElTag type="success" effect="plain">正常</ElTag>
                 <p>标签 1 能读取到已登录的首页信息。</p>
@@ -719,7 +629,7 @@ onMounted(load);
                 <ElTag type="danger" effect="plain">异常</ElTag>
                 <p>页面导航超时、浏览器环境不可用或 AdsPower API 不可达，并记录最近错误。</p>
               </div>
-            </section>
+            </details>
           </div>
         </ElTabPane>
       </ElTabs>
@@ -986,38 +896,6 @@ onMounted(load);
   margin: 12px 0 0;
 }
 
-.settings-metadata {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin: 0;
-  font-size: 13px;
-}
-
-.settings-metadata dt {
-  margin-bottom: 8px;
-  color: var(--epay-muted);
-}
-
-.settings-metadata dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.settings-update {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.settings-update p {
-  flex: 1 1 260px;
-}
-
 .settings-state-row {
   display: flex;
   align-items: flex-start;
@@ -1109,10 +987,6 @@ onMounted(load);
 
   .settings-section {
     padding: 16px;
-  }
-
-  .settings-metadata {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-footer {

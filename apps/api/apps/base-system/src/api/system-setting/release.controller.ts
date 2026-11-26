@@ -41,8 +41,14 @@ export class ReleaseController {
   @UsePermissions({ resource: 'collector', action: 'read' })
   async agentStatus() {
     if (process.env.DEPLOY_STATE) return this.status();
+    return ApiRes.success(await this.localAgentStatus());
+  }
+
+  private async localAgentStatus(force = false) {
+    const file = process.env.EPAY_SOURCE_VERSION_FILE;
+    const region = file ? await localReleaseRegion(file) : 'global';
     const installer = await readFile(join(process.cwd(), 'script-bundles/installers/version.txt'), 'utf8').catch(() => '');
-    return ApiRes.success({ managed: false, agent: installer.trim() });
+    return { ...await this.catalogs[region].versions(force), agent: installer.trim() };
   }
 
   @Post('region')
@@ -64,9 +70,10 @@ export class ReleaseController {
 
   @Post('requests')
   @UsePermissions({ resource: 'system-setting', action: 'update' })
-  async enqueue(@Body() body: { action?: string; version?: string }) {
+  async enqueue(@Body() body: { action?: string; version?: string; kind?: string }) {
     const root = process.env.DEPLOY_STATE;
     if (!root) {
+      if (body?.action === 'check-update' && body.kind === 'agent') return ApiRes.success(await this.localAgentStatus(true));
       if (body?.action === 'check-update' && process.env.EPAY_SOURCE_VERSION_FILE) {
         return ApiRes.success(await this.sourceStatus(process.env.EPAY_SOURCE_VERSION_FILE, true));
       }
