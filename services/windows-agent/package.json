@@ -2,7 +2,7 @@
   "name": "@epay/windows-agent",
   "private": true,
   "type": "module",
-  "version": "0.8.23",
+  "version": "0.8.24",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test scripts/app-id-parser.test.ts scripts/post-login-inspection.test.ts scripts/browser-lifecycle.test.ts scripts/runtime-lifecycle.test.ts scripts/transfer.test.ts scripts/transfer-reopen.test.ts scripts/transfer-qr.test.ts scripts/environment-exclusive.test.ts scripts/launcher-download.test.cjs",

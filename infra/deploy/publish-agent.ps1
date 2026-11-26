@@ -29,7 +29,8 @@ try {
   Copy-Item -LiteralPath $repair -Destination (Join-Path $stage 'windows-agent-repair.zip')
   $files = @((Join-Path $stage 'windows-agent.zip'), (Join-Path $stage 'windows-agent-repair.zip'), $meta, (Join-Path $bundle 'bundle.zip'))
   foreach ($file in $files) { if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "缺少发布附件 $file" } }
-  Invoke-Gh (@('release','create',$tag,'--repo',$repo,'--verify-tag','--latest=false','--generate-notes','--title',$tag) + $files)
+  $notesFile = Join-Path $root "infra/deploy/release-notes/$tag.md"
+  Invoke-Gh (@('release','create',$tag,'--repo',$repo,'--verify-tag','--latest=false','--notes-file',$notesFile,'--title',$tag) + $files)
 } finally {
   $target = [IO.Path]::GetFullPath($stage)
   $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

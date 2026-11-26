@@ -8,7 +8,7 @@ import { monitoringLogUrl, 规范日志条目 } from './browser/monitoring-log.j
 import { Outbox } from './outbox.js';
 import type { AgentCommand, AgentConfiguration, AgentTask, AgentTaskResult } from '../../../contracts/collector-agent.js';
 
-export const SCRIPT_VERSION = 'windows-agent-0.8.23';
+export const SCRIPT_VERSION = 'windows-agent-0.8.24';
 
 const MAX_CONCURRENT_TRANSFERS = 2;
 
@@ -72,7 +72,7 @@ export class AgentRuntime {
       try {
         const response = await this.central.heartbeat({ collectorId: this.collectorId, scriptVersion: SCRIPT_VERSION, sentAt: new Date().toISOString(), accounts: [],
           appliedRevision: this.configuration?.revision ?? 0, activeTaskIds: [...this.pollingWorkers.keys(), ...this.transferWorkers.keys()], adsPowerStatus: this.adsPowerStatus, environmentSyncError: this.inventoryError });
-        if (!this.connectedAt) console.log('[agent] 已连接中心，采集端心跳正常');
+        if (!this.connectedAt) console.log(`[agent] 已连接中心，采集端心跳正常，当前版本 ${SCRIPT_VERSION}`);
         if (this.heartbeatFailed) this.inventoryRequested = true;
         this.heartbeatFailed = false;
         this.connectedAt = Date.now();
