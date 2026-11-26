@@ -2,11 +2,30 @@
 
 ## 用 Docker Compose 部署中心
 
-从 [GitHub 正式版](https://github.com/likew1nd/allinpay/releases/latest) 下载 `compose.pull.yaml`。部署机使用 Docker Compose 拉取预构建的 `linux/amd64` 镜像。
+部署机使用 Docker Compose 拉取预构建的 `linux/amd64` 镜像。选一条命令执行即可。
+
+### 国内部署
 
 ```bash
-docker compose -f compose.pull.yaml up -d --wait
-docker compose -f compose.pull.yaml logs api
+curl -fsSL https://git.5588.la/https://github.com/likew1nd/allinpay/releases/latest/download/compose.pull.yaml \
+  | EPAY_UPDATE_REGION=cn docker compose -f - up -d --wait
+```
+
+国内线路通过 `git.5588.la` 获取 GitHub 发布信息和附件。中心镜像仍从 GHCR 拉取，Redis 镜像从 Docker Hub 拉取。
+
+### GitHub 直连部署
+
+```bash
+curl -fsSL https://github.com/likew1nd/allinpay/releases/latest/download/compose.pull.yaml \
+  | EPAY_UPDATE_REGION=global docker compose -f - up -d --wait
+```
+
+### 完成网页安装
+
+查看一次性安装码。
+
+```bash
+docker logs epay-external-api-1
 ```
 
 打开 `http://127.0.0.1:8080`，从 API 容器日志复制一次性安装码，在网页向导填写已有 MySQL 的连接信息和管理员账号。MySQL 需要提供一个专用空库，以及初始化和运行所需的权限。连接地址须能从 API 容器访问。
@@ -15,7 +34,8 @@ docker compose -f compose.pull.yaml logs api
 
 ## 更新中心和 Windows Agent
 
-- 在后台「系统设置 → 版本更新」查看中心新版并确认升级。更新器使用即将安装的正式版 Compose 文件拉取镜像，备份已安装的中心数据库后再升级。
+- 中心启动后检查正式版，此后每 30 分钟检查一次。也可在「系统设置 → 版本更新」点击「检查更新」，或切换「更新服务器」。
+- 发现新版后，由管理员点击「升级中心」确认。更新器校验正式版附件，拉取镜像，备份已安装的中心数据库并更新容器。安装配置和 Redis 数据继续使用原数据卷。
 - 手动重新应用 Compose 时，从当前或目标版本的 Release 下载对应文件，并沿用原项目名和监听地址。
 - 已使用正式版 `compose.pull.yaml` 部署的实例可以沿用原项目。使用旧宿主机安装流程的实例需要先迁移现有安装配置和数据卷，再切换到 Compose 部署。
 - Windows Agent 在 Windows 上运行。从中心「脚本设置」或 [GitHub Releases](https://github.com/likew1nd/allinpay/releases) 下载完整包，解压并双击 `启动Agent.bat`。在生成的 `.env` 中填入中心 HTTPS 地址、采集端 ID 和 Token，再启动。旧启动器首次接入热更新时，先用完整包或修复包覆盖升级并保留 `.env`。
