@@ -56,20 +56,57 @@ export class TransferService {
 
   async environments(query: PageAccountDto) {
     const page = await this.accounts.pageAccounts({ ...query, transferOnly: true });
-    const records = await Promise.all(page.records.map(async account => {
-      const channelFilters = account.linkedSites.map(site => ({ siteId: site.id, code: { in: site.channels.map(channel => channel.code) } }));
-      const channels = channelFilters.length ? await this.prisma.epayChannel.findMany({ where: { OR: channelFilters }, select: { details: true } }) : [];
-      const incomes = channels.map(channel => (channel.details as { totalSuccessAmount?: string } | null)?.totalSuccessAmount);
+    if (!page.records.length) return { ...page, records: [] };
+    const accountIds = page.records.map(account => account.id);
+    const ruleIds = [...new Set(page.records.flatMap(account => account.transferRuleId ? [account.transferRuleId] : []))];
+    const codesBySite = new Map<string, Set<string>>();
+    for (const account of page.records) {
+      for (const site of account.linkedSites) {
+        const codes = codesBySite.get(site.id) ?? new Set<string>();
+        for (const channel of site.channels) codes.add(channel.code);
+        codesBySite.set(site.id, codes);
+      }
+    }
+    const channelFilters = Array.from(codesBySite, ([siteId, codes]) => ({ siteId, code: { in: [...codes] } }));
+    const [channels, outgoing, active, rules] = await Promise.all([
+      channelFilters.length ? this.prisma.epayChannel.findMany({
+        where: { OR: channelFilters }, select: { siteId: true, code: true, details: true },
+      }) : [],
+      this.prisma.transferRequest.groupBy({
+        by: ['accountId'], where: { accountId: { in: accountIds }, status: 'SUCCEEDED', mode: 'AUTO' }, _sum: { amount: true },
+      }),
+      // 每个环境仅取最早创建的活动转账，同一时间按主键稳定排序。
+      this.prisma.$queryRaw<{ accountId: string; status: string }[]>`
+        SELECT account_id AS accountId, status
+        FROM (
+          SELECT account_id, status,
+            ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY created_at, id) AS rn
+          FROM transfer_request
+          WHERE account_id IN (${Prisma.join(accountIds)}) AND status IN (${Prisma.join(ACTIVE_TRANSFER_STATUSES)})
+        ) AS active_requests
+        WHERE rn = 1`,
+      ruleIds.length ? this.prisma.transferRule.findMany({
+        where: { id: { in: ruleIds } }, select: { id: true, name: true, enabled: true },
+      }) : [],
+    ]);
+    const channelKey = (siteId: string, code: string) => JSON.stringify([siteId, code]);
+    const channelsByKey = new Map(channels.map(channel => [channelKey(channel.siteId, channel.code), channel]));
+    const outgoingByAccount = new Map(outgoing.map(row => [row.accountId, row._sum.amount]));
+    const activeByAccount = new Map(active.map(row => [row.accountId, row.status]));
+    const rulesById = new Map(rules.map(rule => [rule.id, rule]));
+    const records = page.records.map(account => {
+      const keys = new Set(account.linkedSites.flatMap(site => site.channels.map(channel => channelKey(site.id, channel.code))));
+      const incomes = Array.from(keys).flatMap(key => {
+        const channel = channelsByKey.get(key);
+        return channel ? [(channel.details as { totalSuccessAmount?: string } | null)?.totalSuccessAmount] : [];
+      });
       const totalIncome = incomes.length && incomes.every(value => value !== undefined)
         ? incomes.reduce((sum, value) => sum.plus(value!), new Prisma.Decimal(0)).toFixed(2) : null;
-      const [outgoing, active, rule] = await Promise.all([
-        this.prisma.transferRequest.aggregate({ where: { accountId: account.id, status: 'SUCCEEDED', mode: 'AUTO' }, _sum: { amount: true } }),
-        this.prisma.transferRequest.findFirst({ where: { accountId: account.id, status: { in: [...ACTIVE_TRANSFER_STATUSES] } }, orderBy: { createdAt: 'asc' }, select: { status: true } }),
-        account.transferRuleId ? this.prisma.transferRule.findUnique({ where: { id: account.transferRuleId }, select: { id: true, name: true, enabled: true } }) : null,
-      ]);
-      return { ...account, transferRule: rule, transferStatus: active?.status ?? (account.transferRefreshRequired ? 'REFRESHING' : !rule ? 'NO_RULE' : !rule.enabled ? 'RULE_DISABLED' : 'WAITING'),
-        totalIncome, totalTransferred: outgoing._sum.amount?.toFixed(2) ?? '0.00' };
-    }));
+      const rule = rulesById.get(account.transferRuleId ?? '') ?? null;
+      return { ...account, transferRule: rule,
+        transferStatus: activeByAccount.get(account.id) ?? (account.transferRefreshRequired ? 'REFRESHING' : !rule ? 'NO_RULE' : !rule.enabled ? 'RULE_DISABLED' : 'WAITING'),
+        totalIncome, totalTransferred: outgoingByAccount.get(account.id)?.toFixed(2) ?? '0.00' };
+    });
     return { ...page, records };
   }
 

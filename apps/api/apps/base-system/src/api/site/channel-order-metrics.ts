@@ -1,5 +1,8 @@
 import { Prisma, SiteOrderStatus } from '@prisma/client';
 
+import { readOrderSnapshots, storedOrderRun } from './order-snapshot';
+import { SnapshotQueryCache } from './snapshot-query-cache';
+
 type ChannelOrderTotals = {
   code: string;
   status: SiteOrderStatus;
@@ -23,7 +26,11 @@ export type ChannelOrderMetrics = {
   windows: ({ count: number; amount: string } | null)[];
 };
 
-type OrderScope = { site: { id: string; activeSyncId: string | null; timezone: string }; codes?: string[] };
+type OrderScope = {
+  site: { id: string; activeSyncId: string | null; timezone: string };
+  codes?: string[];
+  snapshot?: { id: string; windowStart: Date; windowEnd: Date; metadata: Prisma.JsonValue } | null;
+};
 const recentWindows = { m5: 5, m15: 15, m30: 30, m60: 60 } as const;
 const recentKeys = Object.keys(recentWindows) as (keyof typeof recentWindows)[];
 const rateKeys = [...recentKeys, 'day'] as const;
@@ -67,19 +74,21 @@ type SummaryRow = {
   todayAmount: Prisma.Decimal | null;
 } & Record<`${keyof typeof recentWindows}${'Success' | 'Unpaid'}`, bigint>;
 
+export class OrderMetricsCache {
+  readonly summaries = new SnapshotQueryCache<SummaryRow[]>();
+  readonly channels = new SnapshotQueryCache<ChannelOrderTotals[]>();
+}
+
 export async function summarizeOrders(
   tx: Prisma.TransactionClient,
   scopes: OrderScope[],
   now: Date,
   filter: Prisma.Sql = Prisma.sql`TRUE`,
+  cache?: OrderMetricsCache,
 ) {
-  const snapshots = scopes.length ? await tx.epaySyncRun.findMany({
-    where: { id: { in: scopes.flatMap(({ site }) => site.activeSyncId ? [site.activeSyncId] : []) } },
-    select: { id: true, windowStart: true, windowEnd: true },
-  }) : [];
-  const byId = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
-  const results = await Promise.all(scopes.map(async ({ site, codes }) => {
-    const snapshot = site.activeSyncId ? byId.get(site.activeSyncId) : undefined;
+  const byId = await readOrderSnapshots(tx, scopes.flatMap(({ site, snapshot }) =>
+    site.activeSyncId && snapshot === undefined ? [site.activeSyncId] : []));
+  const results = await Promise.all(scopes.map(async ({ site, codes, snapshot = site.activeSyncId ? byId.get(site.activeSyncId) : undefined }) => {
     if (!snapshot) return null;
     const { end, starts, covers } = orderWindows(snapshot, now, site.timezone);
     const { day } = starts;
@@ -90,7 +99,7 @@ export async function summarizeOrders(
       COUNT(CASE WHEN occurred_at >= ${starts[key]} AND occurred_at < ${end} AND status = 'SUCCESS' THEN 1 END) AS ${Prisma.raw(`${key}Success`)},
       COUNT(CASE WHEN occurred_at >= ${starts[key]} AND occurred_at < ${end} AND status = 'FAILED' THEN 1 END) AS ${Prisma.raw(`${key}Unpaid`)}`));
     const channelFilter = codes ? Prisma.sql`AND channel_code IN (${Prisma.join(codes)}) AND occurred_at < ${end}` : Prisma.empty;
-    const [row] = await tx.$queryRaw<SummaryRow[]>`
+    const load = () => tx.$queryRaw<SummaryRow[]>`
       SELECT COUNT(*) AS total,
         COUNT(CASE WHEN status = 'SUCCESS' THEN 1 END) AS success,
         COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS unpaid,
@@ -101,8 +110,12 @@ export async function summarizeOrders(
         SUM(CASE WHEN ${paidToday} AND status = 'SUCCESS' THEN COALESCE(real_amount, amount) END) AS todayAmount,
         ${recentCounts}
       FROM epay_order
-      WHERE site_id = ${site.id} AND sync_run_id = ${site.activeSyncId}
+      WHERE site_id = ${site.id} AND sync_run_id = ${storedOrderRun(snapshot.id, snapshot.metadata)}
         AND (${filter}) ${channelFilter}`;
+    // 截止时间在快照内固定，站点本地跨日时重新计算今日指标。
+    const [row] = await (cache?.summaries.get(
+      [site.id, snapshot.id, end, day, codes?.slice().sort(), filter.sql, filter.values], load,
+    ) ?? load());
     return { row, covers };
   }));
 
@@ -148,12 +161,14 @@ export async function channelOrderMetrics(
   site: { id: string; activeSyncId: string | null; timezone: string },
   codes: string[],
   now = new Date(),
+  cache?: OrderMetricsCache,
 ) {
   const metrics = new Map<string, ChannelOrderMetrics>();
-  if (!site.activeSyncId || !codes.length) return metrics;
+  const { activeSyncId } = site;
+  if (!activeSyncId || !codes.length) return metrics;
   const snapshot = await tx.epaySyncRun.findUnique({
-    where: { id: site.activeSyncId },
-    select: { windowStart: true, windowEnd: true },
+    where: { id: activeSyncId },
+    select: { windowStart: true, windowEnd: true, metadata: true },
   });
   if (!snapshot) return metrics;
 
@@ -164,7 +179,7 @@ export async function channelOrderMetrics(
     ? Prisma.sql`status = 'SUCCESS' AND paid_at >= ${day} AND paid_at < ${end}`
     : Prisma.sql`FALSE`;
 
-  const totals = await tx.$queryRaw<ChannelOrderTotals[]>`
+  const load = () => tx.$queryRaw<ChannelOrderTotals[]>`
     SELECT channel_code AS code, status,
       COUNT(CASE WHEN occurred_at >= ${m5} THEN 1 END) AS m5,
       COUNT(CASE WHEN occurred_at >= ${m15} THEN 1 END) AS m15,
@@ -179,11 +194,14 @@ export async function channelOrderMetrics(
       SUM(CASE WHEN status = 'SUCCESS' AND paid_at >= ${m60} AND paid_at < ${end} THEN COALESCE(real_amount, amount) END) AS m60Amount,
       SUM(CASE WHEN ${received} THEN COALESCE(real_amount, amount) END) AS dayAmount
     FROM epay_order
-    WHERE site_id = ${site.id} AND sync_run_id = ${site.activeSyncId}
+    WHERE site_id = ${site.id} AND sync_run_id = ${storedOrderRun(activeSyncId, snapshot.metadata)}
       AND channel_code IN (${Prisma.join(codes)}) AND status IN ('SUCCESS', 'FAILED')
       AND occurred_at < ${end}
       AND (occurred_at >= ${lower} OR (${received}))
     GROUP BY channel_code, status`;
+  const totals = await (cache?.channels.get(
+    [site.id, activeSyncId, end, day, codes.slice().sort()], load,
+  ) ?? load());
 
   const success = new Map<string, ChannelOrderTotals>();
   const failed = new Map<string, ChannelOrderTotals>();

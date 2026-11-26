@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { auditAdjustment } from './adjustment-audit';
 import { mapOrderStatus, summarizeOrderCounts } from '../site/order-mapping';
+import { storedOrderRun } from '../site/order-snapshot';
 import {
   describeRule,
   isMembershipAction,
@@ -30,14 +31,14 @@ export async function channelRates(
   const windowStart = new Date(now.getTime() - windowMinutes * 60000);
   const sync = await tx.epaySyncRun.findUnique({
     where: { id: site.activeSyncId },
-    select: { windowStart: true },
+    select: { windowStart: true, metadata: true },
   });
   if (!sync || sync.windowStart > windowStart) return rates;
   const counts = await tx.epayOrder.groupBy({
     by: ['channelCode', 'sourceStatus'],
     where: {
       siteId: site.id,
-      syncRunId: site.activeSyncId,
+      syncRunId: storedOrderRun(site.activeSyncId, sync.metadata),
       occurredAt: { gte: windowStart, lte: now },
     },
     _count: { _all: true },
@@ -138,7 +139,7 @@ export async function evaluateStrategyTarget(
   );
   const sync = await tx.epaySyncRun.findUnique({
     where: { id: site.activeSyncId },
-    select: { windowStart: true },
+    select: { windowStart: true, metadata: true },
   });
   if (!sync) return finish('订单数据尚未同步或已过期');
   const orderWindowCovered = sync.windowStart <= windowStart;
@@ -164,7 +165,7 @@ export async function evaluateStrategyTarget(
         by: ['sourceStatus'],
         where: {
           siteId: site.id,
-          syncRunId: site.activeSyncId,
+          syncRunId: storedOrderRun(site.activeSyncId, sync.metadata),
           channelCode: target.channelCode,
           occurredAt: { gte: windowStart, lte: now },
         },

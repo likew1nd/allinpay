@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/business/auth';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useRefreshInterval } from '@/hooks/common/refresh-interval';
 import { useUITable } from '@/hooks/common/table';
-import { fetchAdjustments, fetchAllSiteOrders, fetchCollectorStatistics, fetchSiteDataList } from '@/service/api';
+import { fetchAdjustments, fetchAllSiteOrderStatistics, fetchCollectorStatistics, fetchSiteDataList } from '@/service/api';
 import type { AdjustmentRecord, CollectorStatistics, OrderListStatistics, SiteDataRecord, SiteListStatistics } from '@/service/api';
 import EpaySegments from '@/components/custom/epay-segments.vue';
 import SiteCollectionCards from '@/views/site-management/modules/site-collection-cards.vue';
@@ -39,7 +39,7 @@ const { data: sites, loading, refreshData } = useUITable({
   api: async () => {
     const [site, order, collector, adjustment] = await Promise.all([
       canSites.value ? fetchSiteDataList({ current: 1, size: 100 }) : null,
-      canSites.value ? fetchAllSiteOrders({ current: 1, size: 1 }) : null,
+      canSites.value ? fetchAllSiteOrderStatistics() : null,
       canCollectors.value ? fetchCollectorStatistics() : null,
       canAdjustments.value ? fetchAdjustments({ current: 1, size: 10 }) : null
     ]);
@@ -50,7 +50,7 @@ const { data: sites, loading, refreshData } = useUITable({
     return !failed.value;
   },
   transform: ({ site, order, collector, adjustment }) => {
-    orders.value = order?.data?.statistics;
+    orders.value = order?.data ?? undefined;
     collectors.value = collector?.data ?? undefined;
     adjustments.value = adjustment?.data?.records ?? [];
     siteStats.value = site?.data?.statistics;

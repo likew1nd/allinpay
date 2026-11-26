@@ -15,6 +15,7 @@ import { StrategyService } from '../strategy/strategy.service';
 import { SyncPageDto, SyncStartDto } from './dto/site-data.dto';
 import { decryptSiteSecret } from './site-credentials';
 import { SiteDataService } from './site-data.service';
+import type { OrderPublication } from './order-snapshot';
 
 class ConnectionFailure extends Error {}
 class ConnectionSuperseded extends Error {}
@@ -177,22 +178,32 @@ export class SiteConnectionService implements OnApplicationBootstrap, OnModuleDe
         data: { status: 'FAILED', error: '连接任务已重新启动，将重新同步', completedAt: new Date() },
       });
       let page = 0;
-      for await (const batch of adapter.snapshot(prefix, site.timezone, site.syncRevision)) {
+      let publication: OrderPublication | undefined;
+      const previous = await this.data.orderManifest(site);
+      for await (const batch of adapter.snapshot(prefix, site.timezone, site.syncRevision, previous)) {
         await record();
         if ('start' in batch) {
           const dto = plainToInstance(SyncStartDto, batch.start);
           if ((await validate(dto)).length) throw new ConnectionFailure('站点业务数据格式不兼容，无法完成数据同步');
           runId = (await this.data.start(id, dto)).id;
+          if (batch.manifest) publication = {
+            manifest: batch.manifest,
+            ...(site.activeSyncId && batch.changedBuckets ? {
+              delta: { baselineId: site.activeSyncId, buckets: batch.changedBuckets, orders: [] },
+            } : {}),
+          };
         } else {
           if (!runId) throw new ConnectionFailure('站点同步未正确开始，系统将自动重试');
           const dto = plainToInstance(SyncPageDto, { page: page++, orders: batch.orders });
           if ((await validate(dto)).length) throw new ConnectionFailure('站点订单数据格式不兼容，无法完成数据同步');
-          await this.data.upload(id, runId, dto);
+          if (publication?.delta) publication.delta.orders.push(...dto.orders);
+          else await this.data.upload(id, runId, dto);
         }
       }
       await record();
       if (!runId) throw new ConnectionFailure('未获取到完整的站点数据，系统将自动重试');
-      await this.data.complete(id, runId);
+      if (publication) await this.data.complete(id, runId, publication);
+      else await this.data.complete(id, runId);
       published = true;
       await record({ connectionStatus: 'ONLINE', lastError: null });
 

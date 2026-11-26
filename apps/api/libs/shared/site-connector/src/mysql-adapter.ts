@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { SyncStart, OrderData } from './site-data';
 import { instant, wallTime, money, parseMembers } from './business-mapping';
 import mysql, { Pool } from 'mysql2/promise';
@@ -6,6 +7,10 @@ import { validateStructure } from './structure';
 import type { SiteControlCommand, SiteControlResult } from './control';
 import { availablePaymentInterfaces } from './payment-interfaces';
 import { validateMemberChange } from './polling-members';
+import { changedOrderBuckets, MAX_ORDER_BUCKETS, ORDER_BUCKET_PREFIX_LENGTH, orderBucketRange, orderManifest } from './order-manifest';
+import type { OrderManifest } from './order-manifest';
+
+const ORDER_COLUMNS = 'trade_no,uid,type,channel,subchannel,money,realmoney,status,addtime,endtime';
 
 export class MysqlEpayAdapter {
   private readonly pool: Pool;
@@ -96,7 +101,8 @@ export class MysqlEpayAdapter {
     prefix: string,
     timezone: string,
     revision: number,
-  ): AsyncGenerator<{ start: SyncStart } | { orders: OrderData[] }> {
+    previous?: OrderManifest,
+  ): AsyncGenerator<{ start: SyncStart; manifest?: OrderManifest; changedBuckets?: string[] } | { orders: OrderData[] }> {
     if (!/^[a-zA-Z0-9_]{0,64}$/.test(prefix)) throw new Error('Invalid prefix');
     const table = (name: string) => mysql.escapeId(prefix + name);
     const connection = await this.pool.getConnection();
@@ -113,6 +119,7 @@ export class MysqlEpayAdapter {
         engines.some((row) => String(row.ENGINE).toLowerCase() !== 'innodb')
       )
         throw new Error('Consistent reads require InnoDB');
+      await connection.query('SET SESSION group_concat_max_len = 2097152');
       await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       await connection.query(
         'START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY',
@@ -143,10 +150,8 @@ export class MysqlEpayAdapter {
           ' ORDER BY id',
         timeout: 30_000,
       });
-      const typeName = (id: unknown) => {
-        const type = types.find((row) => String(row.id) === String(id));
-        return String(type?.showname || type?.name || id);
-      };
+      const typeNames = new Map(types.map(row => [String(row.id), String(row.showname || row.name || row.id)]));
+      const typeName = (id: unknown) => typeNames.get(String(id)) ?? String(id);
       const columns = await read(
         'SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',
         [prefix + 'channel'],
@@ -233,19 +238,31 @@ export class MysqlEpayAdapter {
           table('roll') +
           ' ORDER BY id',
       );
-      const count = await read(
-        'SELECT COUNT(*) AS total FROM ' +
-          table('order') +
-          ' WHERE addtime < ?',
+      // 只核对白名单字段。校验串被截断的分段每轮重新读取，避免误判为无变化。
+      const buckets = await read(
+        'SELECT prefix, total, IF(OCTET_LENGTH(hashes) = total * 64, SHA2(hashes, 256), NULL) AS digest ' +
+          `FROM (SELECT LEFT(trade_no, ${ORDER_BUCKET_PREFIX_LENGTH}) AS prefix, COUNT(*) AS total, ` +
+          `GROUP_CONCAT(SHA2(JSON_ARRAY(${ORDER_COLUMNS}), 256) ORDER BY trade_no SEPARATOR '') AS hashes ` +
+          `FROM ${table('order')} WHERE addtime < ? GROUP BY prefix LIMIT ${MAX_ORDER_BUCKETS + 1}) AS order_buckets`,
         [cutoff],
       );
+      const typeNamesDigest = createHash('sha256').update(JSON.stringify([...typeNames])).digest('hex');
+      const manifest = orderManifest(typeNamesDigest, buckets.map(row => ({
+        prefix: row.prefix, count: Number(row.total), digest: row.digest,
+      })));
+      const expectedCount = manifest
+        ? manifest.buckets.reduce((sum, bucket) => sum + bucket.count, 0)
+        : Number((await read(`SELECT COUNT(*) AS total FROM ${table('order')} WHERE addtime < ?`, [cutoff]))[0].total);
+      const changedBuckets = manifest ? changedOrderBuckets(manifest, previous) : undefined;
       yield {
+        manifest,
+        changedBuckets,
         start: {
           revision,
           windowStart: windowStart.toISOString(),
           windowEnd: windowEnd.toISOString(),
           mappingVersion: 'epay-pro-2070-status-v2',
-          expectedCount: Number(count[0].total),
+          expectedCount,
           channels: channels.map((row) => ({
             code: String(row.id),
             name: String(row.name),
@@ -268,35 +285,37 @@ export class MysqlEpayAdapter {
           })),
         },
       };
-      let cursor = '';
-      while (true) {
-        const rows = await read(
-          'SELECT trade_no,uid,type,channel,subchannel,money,realmoney,status,addtime,endtime FROM ' +
-            table('order') +
-            ' WHERE addtime < ? AND trade_no > ? ORDER BY trade_no LIMIT 500',
-          [cutoff, cursor],
-        );
-        if (!rows.length) break;
-        yield {
-          orders: rows.map((row) => ({
-            externalId: String(row.trade_no),
-            merchantId: String(row.uid),
-            paymentTypeId: String(row.type),
-            paymentTypeName: typeName(row.type),
-            channelCode: String(row.channel),
-            subchannelCode: String(row.subchannel),
-            amount: money(row.money),
-            ...(row.realmoney !== null
-              ? { realAmount: money(row.realmoney) }
-              : {}),
-            sourceStatus: String(row.status),
-            occurredAt: instant(String(row.addtime), timezone),
-            ...(row.endtime && !String(row.endtime).startsWith('0000-')
-              ? { paidAt: instant(String(row.endtime), timezone) }
-              : {}),
-          })),
-        };
-        cursor = String(rows[rows.length - 1].trade_no);
+      const activeBuckets = new Set(manifest?.buckets.map(bucket => bucket.prefix));
+      const ranges = changedBuckets?.filter(prefix => activeBuckets.has(prefix)).map(orderBucketRange) ?? [null];
+      for (const range of ranges) {
+        let cursor = '';
+        while (true) {
+          const rows = await read(
+            `SELECT ${ORDER_COLUMNS} FROM ${table('order')} WHERE addtime < ? AND trade_no > ?` +
+              (range ? ' AND trade_no BETWEEN ? AND ?' : '') + ' ORDER BY trade_no LIMIT 500',
+            [cutoff, cursor, ...(range ? [range.gte, range.lte] : [])],
+          );
+          if (!rows.length) break;
+          yield {
+            orders: rows.map((row) => ({
+              externalId: String(row.trade_no),
+              merchantId: String(row.uid),
+              paymentTypeId: String(row.type),
+              paymentTypeName: typeName(row.type),
+              channelCode: String(row.channel),
+              subchannelCode: String(row.subchannel),
+              amount: money(row.money),
+              ...(row.realmoney !== null ? { realAmount: money(row.realmoney) } : {}),
+              sourceStatus: String(row.status),
+              occurredAt: instant(String(row.addtime), timezone),
+              ...(row.endtime && !String(row.endtime).startsWith('0000-')
+                ? { paidAt: instant(String(row.endtime), timezone) }
+                : {}),
+            })),
+          };
+          if (rows.length < 500) break;
+          cursor = String(rows[rows.length - 1].trade_no);
+        }
       }
     } finally {
       await connection.rollback().catch(() => {});

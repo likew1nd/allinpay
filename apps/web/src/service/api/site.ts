@@ -375,6 +375,9 @@ export function fetchSiteOrders(id: string, params: SiteDataParams) {
 export function fetchAllSiteOrders(params: SiteDataParams) {
   return request<SiteDataPage<SiteOrder, OrderListStatistics>>({ url: '/sites/orders', method: 'get', params });
 }
+export function fetchAllSiteOrderStatistics() {
+  return request<OrderListStatistics>({ url: '/sites/orders/statistics', method: 'get' });
+}
 export function fetchSiteSyncHistory(id: string, params: SiteDataParams) {
   return request<Api.Common.PaginatingQueryRecord<SiteSyncRun>>({
     url: `/sites/${encodeURIComponent(id)}/sync-history`,

@@ -6,12 +6,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SiteChannelStatus, SiteOrderStatus } from '@prisma/client';
+import { EpaySite, Prisma, SiteChannelStatus, SiteOrderStatus } from '@prisma/client';
 import { ulid } from 'ulid';
 
 import { PrismaService } from '@lib/shared/prisma/prisma.service';
 
-import { channelOrderMetrics, summarizeOrders } from './channel-order-metrics';
+import type { OrderManifest } from '../../../../../libs/shared/site-connector/src/order-manifest';
+import { channelOrderMetrics, OrderMetricsCache, summarizeOrders } from './channel-order-metrics';
 import {
   PageSiteDataDto,
   SyncPageDto,
@@ -22,9 +23,28 @@ import {
   ORDER_MAPPING,
   summarizeOrderCounts,
 } from './order-mapping';
+import { SnapshotQueryCache } from './snapshot-query-cache';
+import { orderRecord, publishOrderDelta, readOrderSnapshots, storedOrderRun } from './order-snapshot';
+import type { OrderPublication } from './order-snapshot';
+
+type OrderSite = {
+  id: string;
+  activeSyncId: string;
+  timezone: string;
+  snapshot: { id: string; windowStart: Date; windowEnd: Date; metadata: Prisma.JsonValue } | null;
+};
+type OrderStatusGroup = {
+  siteId: string;
+  sourceStatus: string;
+  _count: { _all: number };
+  _sum: { amount: Prisma.Decimal | null };
+};
 
 @Injectable()
 export class SiteDataService {
+  private readonly orderMetrics = new OrderMetricsCache();
+  private readonly orderGroups = new SnapshotQueryCache<OrderStatusGroup[]>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async lock(tx: Prisma.TransactionClient, siteId: string) {
@@ -32,6 +52,23 @@ export class SiteDataService {
     const site = await tx.epaySite.findUnique({ where: { id: siteId } });
     if (!site) throw new NotFoundException('站点不存在');
     return site;
+  }
+
+  async orderManifest(site: Pick<EpaySite, 'id' | 'activeSyncId' | 'syncRevision'>) {
+    if (!site.activeSyncId) return undefined;
+    const run = await this.prisma.epaySyncRun.findFirst({
+      where: { id: site.activeSyncId, siteId: site.id, revision: site.syncRevision, status: 'SUCCESS', mappingVersion: ORDER_MAPPING },
+      select: { pages: true, orderCount: true },
+    });
+    const manifest = run?.pages as unknown as OrderManifest | undefined;
+    if (manifest?.version === 1 && Array.isArray(manifest.buckets) &&
+        manifest.buckets.reduce((total, bucket) => total + bucket.count, 0) === run?.orderCount) return manifest;
+    return undefined;
+  }
+
+  private async activeOrderRun(tx: Prisma.TransactionClient, activeId: string | null) {
+    const run = activeId ? await tx.epaySyncRun.findUnique({ where: { id: activeId }, select: { metadata: true } }) : null;
+    return activeId ? storedOrderRun(activeId, run?.metadata) : null;
   }
 
   async start(siteId: string, dto: SyncStartDto) {
@@ -84,7 +121,7 @@ export class SiteDataService {
         where: { siteId, status: 'RUNNING' },
       });
       if (running) throw new ConflictException('该站点已有同步正在进行');
-      await this.cleanup(tx, siteId, site.activeSyncId);
+      await this.cleanup(tx, siteId, site.activeSyncId, await this.activeOrderRun(tx, site.activeSyncId));
       const run = await tx.epaySyncRun.create({
         data: {
           id: ulid(),
@@ -147,16 +184,7 @@ export class SiteDataService {
       }
       try {
         await tx.epayOrder.createMany({
-          data: dto.orders.map((row) => ({
-            ...row,
-            id: ulid(),
-            siteId,
-            syncRunId: runId,
-            occurredAt: new Date(row.occurredAt),
-            paidAt: row.paidAt ? new Date(row.paidAt) : null,
-            status: mapOrderStatus(row.sourceStatus),
-            sourceVersion: ORDER_MAPPING,
-          })),
+          data: dto.orders.map((row) => orderRecord(row, siteId, runId)),
         });
       } catch (error) {
         if (
@@ -178,7 +206,7 @@ export class SiteDataService {
     });
   }
 
-  async complete(siteId: string, runId: string) {
+  async complete(siteId: string, runId: string, publication?: OrderPublication) {
     return this.prisma.$transaction(
       async (tx) => {
         const site = await this.lock(tx, siteId);
@@ -194,8 +222,19 @@ export class SiteDataService {
         ) {
           throw new ConflictException('同步已失效，请重新开始');
         }
-        if (run.orderCount !== run.expectedCount)
+        let orderRunId = runId;
+        if (publication?.delta) {
+          const previous = site.activeSyncId === publication.delta.baselineId
+            ? await tx.epaySyncRun.findFirst({
+                where: { id: publication.delta.baselineId, siteId, revision: site.syncRevision, status: 'SUCCESS' },
+                select: { id: true, metadata: true, orderCount: true },
+              })
+            : null;
+          if (!previous || run.orderCount) throw new ConflictException('增量同步基准已变化');
+          orderRunId = await publishOrderDelta(tx, run, previous, { ...publication, delta: publication.delta });
+        } else if (run.orderCount !== run.expectedCount) {
           throw new BadRequestException('订单尚未全部上传');
+        }
         const metadata = run.metadata as unknown as Pick<
           SyncStartDto,
           'channels' | 'pollingGroups'
@@ -280,13 +319,22 @@ export class SiteDataService {
         const now = new Date();
         await tx.epaySyncRun.update({
           where: { id: runId },
-          data: { status: 'SUCCESS', completedAt: now },
+          data: {
+            status: 'SUCCESS', completedAt: now, orderCount: run.expectedCount,
+            ...(publication ? {
+              metadata: orderRunId === runId ? {} : { orderRunId },
+              pages: publication.manifest,
+            } : {}),
+          },
         });
         await tx.epaySite.update({
           where: { id: siteId },
           data: { activeSyncId: runId, lastSyncAt: now },
         });
-        await this.cleanup(tx, siteId, runId);
+        if (site.activeSyncId) await tx.epaySyncRun.updateMany({
+          where: { id: site.activeSyncId, siteId }, data: { pages: [] },
+        });
+        await this.cleanup(tx, siteId, runId, orderRunId);
         return { accepted: true };
       },
       { timeout: 30_000 },
@@ -298,32 +346,25 @@ export class SiteDataService {
     tx: Prisma.TransactionClient,
     siteId: string,
     activeId: string | null,
+    orderRunId: string | null,
   ) {
+    const retained = [...new Set([activeId, orderRunId].filter((id): id is string => Boolean(id)))];
+    const inactive = await tx.epaySyncRun.findMany({
+      where: { siteId, status: { not: 'RUNNING' }, id: { notIn: retained } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
     await tx.epayOrder.deleteMany({
       where: {
         siteId,
         OR: [
           { syncRunId: null },
-          {
-            syncRunId: { not: activeId ?? '__none__' },
-            syncRun: { status: { not: 'RUNNING' } },
-          },
+          { syncRunId: { in: inactive.map(row => row.id) } },
         ],
       },
     });
-    const old = await tx.epaySyncRun.findMany({
-      where: {
-        siteId,
-        status: { not: 'RUNNING' },
-        id: { not: activeId ?? '__none__' },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: activeId ? 19 : 20,
-      select: { id: true },
-    });
-    await tx.epaySyncRun.deleteMany({
-      where: { id: { in: old.map((row) => row.id) }, siteId },
-    });
+    const old = inactive.slice(20 - retained.length);
+    if (old.length) await tx.epaySyncRun.deleteMany({ where: { id: { in: old.map(row => row.id) }, siteId } });
   }
 
   async fail(siteId: string, runId: string, reason: string) {
@@ -338,7 +379,7 @@ export class SiteDataService {
           completedAt: new Date(),
         },
       });
-      await this.cleanup(tx, siteId, site.activeSyncId);
+      await this.cleanup(tx, siteId, site.activeSyncId, await this.activeOrderRun(tx, site.activeSyncId));
     });
     return { accepted: true };
   }
@@ -396,7 +437,7 @@ export class SiteDataService {
         }
         const total = matched.length;
         const now = new Date();
-        const statistics = await summarizeOrders(tx, groupBySite(matched), now);
+        const statistics = await summarizeOrders(tx, groupBySite(matched), now, undefined, this.orderMetrics);
         if (!channels.length) return { current, size, total, statistics, records: [] };
 
         const scopes = groupBySite(channels);
@@ -416,7 +457,7 @@ export class SiteDataService {
           }),
           Promise.all(scopes.map(async ({ site, codes }) => [
             site.id,
-            await channelOrderMetrics(tx, site, codes, now),
+            await channelOrderMetrics(tx, site, codes, now, this.orderMetrics),
           ] as const)),
         ]);
         const metrics = new Map(siteMetrics);
@@ -432,6 +473,63 @@ export class SiteDataService {
             .map(({ id, name, status }) => ({ id, name, status })),
         }));
         return { current, size, total, statistics, records };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
+  private async activeOrderSites(tx: Prisma.TransactionClient, siteId?: string) {
+    const sites = siteId
+      ? [await this.site(tx, siteId)]
+      : await tx.epaySite.findMany({
+          where: { activeSyncId: { not: null } },
+          select: { id: true, activeSyncId: true, timezone: true },
+        });
+    const active = sites.filter((site): site is typeof site & { activeSyncId: string } => site.activeSyncId !== null);
+    const snapshots = await readOrderSnapshots(tx, active.map(site => site.activeSyncId));
+    return active.map(site => {
+      const snapshot = snapshots.get(site.activeSyncId) ?? null;
+      return { ...site, snapshot, orderRunId: storedOrderRun(site.activeSyncId, snapshot?.metadata) };
+    });
+  }
+
+  private readOrderGroups(tx: Prisma.TransactionClient, where: Prisma.EpayOrderWhereInput, activeIds: string[]) {
+    return this.orderGroups.get([where, activeIds.sort()], async () => {
+      const groups = await tx.epayOrder.groupBy({
+        by: ['siteId', 'sourceStatus'],
+        where,
+        _count: { _all: true },
+        _sum: { amount: true },
+      });
+      return groups;
+    });
+  }
+
+  private async readOrderStatistics(
+    tx: Prisma.TransactionClient,
+    sites: OrderSite[],
+    where: Prisma.EpayOrderWhereInput,
+    filter?: Prisma.Sql,
+  ) {
+    const [groups, collections] = await Promise.all([
+      sites.length ? this.readOrderGroups(tx, where, sites.map(site => site.activeSyncId)) : [],
+      summarizeOrders(tx, sites.map((site) => ({ site, snapshot: site.snapshot })), new Date(), filter, this.orderMetrics),
+    ]);
+    const statistics = { total: 0, unpaid: 0, paid: 0, refunded: 0, frozen: 0, preauthorized: 0, unknown: 0 };
+    const statusKeys = ['unpaid', 'paid', 'refunded', 'frozen', 'preauthorized'] as const;
+    for (const { sourceStatus, _count } of groups) {
+      const key = /^\d+$/.test(sourceStatus) ? statusKeys[Number(sourceStatus)] : undefined;
+      statistics[key ?? 'unknown'] += _count._all;
+      statistics.total += _count._all;
+    }
+    return { ...statistics, collections };
+  }
+
+  async allOrderStatistics() {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const sites = await this.activeOrderSites(tx);
+        return this.readOrderStatistics(tx, sites, { syncRunId: { in: sites.map(site => site.orderRunId).sort() } });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -469,47 +567,29 @@ export class SiteDataService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const sites = siteId
-          ? [await this.site(tx, siteId)]
-          : await tx.epaySite.findMany({
-              where: { activeSyncId: { not: null } },
-              select: { id: true, activeSyncId: true, timezone: true },
-            });
-        const activeSites = sites.filter((site) => site.activeSyncId !== null);
-        const syncRunIds = activeSites.map((site) => site.activeSyncId!);
-        const statistics = { total: 0, unpaid: 0, paid: 0, refunded: 0, frozen: 0, preauthorized: 0, unknown: 0 };
-        const collections = summarizeOrders(tx, activeSites.map((site) => ({ site })), new Date(),
-          filters.length ? Prisma.join(filters.map(([, sql]) => sql), ' AND ') : undefined);
-        if (!syncRunIds.length) return { current, size, records: [], total: 0, statistics: { ...statistics, collections: await collections } };
-
+        const sites = await this.activeOrderSites(tx, siteId);
         const where: Prisma.EpayOrderWhereInput = {
           ...(siteId ? { siteId } : {}),
-          syncRunId: { in: syncRunIds },
+          syncRunId: { in: sites.map(site => site.orderRunId).sort() },
           ...Object.assign({}, ...filters.map(([where]) => where)),
         };
-        const [orders, statuses, collectionStats] = await Promise.all([
-          tx.epayOrder.findMany({
+        const filter = filters.length ? Prisma.join(filters.map(([, sql]) => sql), ' AND ') : undefined;
+        const [orders, statistics] = await Promise.all([
+          sites.length ? tx.epayOrder.findMany({
             where,
             skip: (current - 1) * size,
             take: size,
             orderBy: [{ occurredAt: 'desc' }, { externalId: 'desc' }, { id: 'desc' }],
             include: { site: { select: { name: true, baseUrl: true } } },
-          }),
-          tx.epayOrder.groupBy({ by: ['sourceStatus'], where, _count: { _all: true } }),
-          collections,
+          }) : [],
+          this.readOrderStatistics(tx, sites, where, filter),
         ]);
-        const statusKeys = ['unpaid', 'paid', 'refunded', 'frozen', 'preauthorized'] as const;
-        for (const { sourceStatus, _count } of statuses) {
-          const key = /^\d+$/.test(sourceStatus) ? statusKeys[Number(sourceStatus)] : undefined;
-          statistics[key ?? 'unknown'] += _count._all;
-          statistics.total += _count._all;
-        }
         const records = orders.map(({ site, ...order }) => ({
           ...order,
           siteName: site.name,
           siteBaseUrl: site.baseUrl,
         }));
-        return { current, size, records, total: statistics.total, statistics: { ...statistics, collections: collectionStats } };
+        return { current, size, records, total: statistics.total, statistics };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -563,7 +643,7 @@ export class SiteDataService {
           ]);
           // 订单没有轮询组编号，按当前成员通道汇总；共享通道只选一次。
           const scopes = channels.length ? [{ site, codes: channels.map(({ code }) => code) }] : [];
-          const statistics = await summarizeOrders(tx, scopes, new Date());
+          const statistics = await summarizeOrders(tx, scopes, new Date(), undefined, this.orderMetrics);
           return { current: query.current, size: query.size, records, total, statistics };
         } else {
           [records, total] = await Promise.all([
@@ -614,13 +694,13 @@ export class SiteDataService {
         const activeIds = sites.flatMap((site) =>
           site.activeSyncId ? [site.activeSyncId] : [],
         );
+        const snapshots = await readOrderSnapshots(tx, activeIds);
+        const orderRunIds = activeIds.map(id => storedOrderRun(id, snapshots.get(id)?.metadata)).sort();
+        const orderGroups: Promise<OrderStatusGroup[]> = activeIds.length
+          ? this.readOrderGroups(tx, { syncRunId: { in: orderRunIds } }, activeIds)
+          : Promise.resolve([]);
         const [orders, channels, pollingGroups] = await Promise.all([
-          tx.epayOrder.groupBy({
-            by: ['siteId', 'sourceStatus'],
-            where: { syncRunId: { in: activeIds } },
-            _count: { _all: true },
-            _sum: { amount: true },
-          }),
+          orderGroups,
           tx.epayChannel.groupBy({
             by: ['siteId'],
             where: { siteId: { in: siteIds }, sourceVersion: { not: null } },
@@ -674,6 +754,7 @@ export class SiteDataService {
         const active = site.activeSyncId
           ? await tx.epaySyncRun.findUnique({
               where: { id: site.activeSyncId },
+              select: { windowStart: true, windowEnd: true, mappingVersion: true, metadata: true },
             })
           : null;
         const latest = await tx.epaySyncRun.findFirst({
@@ -687,13 +768,9 @@ export class SiteDataService {
             completedAt: true,
           },
         });
-        const groups = await tx.epayOrder.groupBy({
-          by: ['sourceStatus'],
-          orderBy: { sourceStatus: 'asc' },
-          where: { siteId, syncRunId: site.activeSyncId ?? '__none__' },
-          _count: { _all: true },
-          _sum: { amount: true },
-        });
+        const groups = site.activeSyncId
+          ? await this.readOrderGroups(tx, { siteId, syncRunId: { in: [storedOrderRun(site.activeSyncId, active?.metadata)] } }, [site.activeSyncId])
+          : [];
         const [channelCount, pollingGroupCount] = await Promise.all([
           tx.epayChannel.count({
             where: { siteId, sourceVersion: { not: null } },

@@ -80,6 +80,13 @@ export class SiteController {
     return ApiRes.success(await this.data.pageOrders(query));
   }
 
+  @Get('orders/statistics')
+  @UsePermissions({ resource: 'site', action: 'read' })
+  @ApiOperation({ summary: '查询跨站点订单汇总' })
+  async allOrderStatistics() {
+    return ApiRes.success(await this.data.allOrderStatistics());
+  }
+
   @Get(':id')
   @UsePermissions({ resource: 'site', action: 'read' })
   @ApiOperation({ summary: '查询站点详情' })
