@@ -28,9 +28,12 @@ COMPOSE = 'compose.pull.yaml'
 CN_MIRROR = 'git.5588.la/'
 
 
-def atomic(path, data, mode=0o600):
+def atomic(path, data, mode=0o600, *, preserve_owner=False):
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as f:
         f.write(data)
+        if preserve_owner and path.exists():
+            metadata = path.stat()
+            os.fchown(f.fileno(), metadata.st_uid, metadata.st_gid)
         os.fchmod(f.fileno(), mode)
     os.replace(f.name, path)
 
@@ -128,11 +131,27 @@ def catalog(rows):
     record(region=update_region(), available=available, checked=dt.datetime.now(dt.timezone.utc).isoformat(), checkError='')
 
 
-def compose(directory, *args, mirror, env=None, **kwargs):
-    command = ['docker', 'compose', '--project-name', PROJECT, '--env-file', '/dev/null',
-               '-f', str(directory / COMPOSE)]
+def compose(directory, *args, mirror, env=None, live=False, **kwargs):
+    project_dir = os.environ.get('EPAY_PROJECT_DIR') if live else None
+    manifest = Path(project_dir) / 'docker-compose.yml' if project_dir else directory / COMPOSE
+    settings = manifest.parent / '.env' if project_dir else Path('/dev/null')
+    command = ['docker', 'compose', '--project-name', PROJECT, '--env-file', str(settings), '-f', str(manifest)]
     environment = {**(os.environ if env is None else env), 'EPAY_IMAGE_MIRROR': mirror}
     return subprocess.run(command + list(args), check=True, env=environment, **kwargs)
+
+
+def activate_web(directory, mirror):
+    project_dir = os.environ.get('EPAY_PROJECT_DIR')
+    if project_dir:
+        # 让 Docker 的项目标签和面板始终指向宿主机上同一份文件。
+        live = Path(project_dir)
+        settings = live / '.env'
+        lines = settings.read_text().splitlines() if settings.is_file() else []
+        lines = [line for line in lines if not line.startswith(('EPAY_IMAGE_MIRROR=', 'EPAY_UPDATE_REGION='))]
+        lines.extend([f'EPAY_IMAGE_MIRROR={mirror}', f'EPAY_UPDATE_REGION={update_region()}'])
+        atomic(settings, ('\n'.join(lines) + '\n').encode(), preserve_owner=True)
+        atomic(live / 'docker-compose.yml', (directory / COMPOSE).read_bytes(), 0o644, preserve_owner=True)
+    compose(directory, 'up', '-d', '--wait', '--no-build', 'web', mirror=mirror, live=True)
 
 
 def setup():
@@ -197,7 +216,7 @@ def center(release):
     mirror = CN_MIRROR if update_region() == 'cn' else ''
     previous_mirror = installed.get('imageMirror', '')
     try:
-        compose(directory, 'pull', '--policy', 'missing', 'prepare', 'redis', 'api', 'web', mirror=mirror)
+        compose(directory, 'pull', '--policy', 'missing', 'redis', 'api', 'web', mirror=mirror)
     except subprocess.CalledProcessError as error:
         registry = mirror.rstrip('/') if mirror else 'GHCR 和 Docker Hub'
         raise RuntimeError(f'镜像拉取失败，请检查 Docker 到 {registry} 的连接及镜像读取权限') from error
@@ -206,11 +225,11 @@ def center(release):
         compose(previous, 'stop', 'web', 'api', mirror=previous_mirror)
         save_backup(previous, directory, previous_mirror=previous_mirror, mirror=mirror)
     except Exception:
-        compose(previous, 'up', '-d', '--wait', '--no-build', 'web', mirror=previous_mirror)
+        activate_web(previous, previous_mirror)
         raise
 
     # 更新器继续运行，避免 Compose 中途替换正在执行升级的容器。
-    compose(directory, 'up', '-d', '--wait', '--no-build', 'web', mirror=mirror)
+    activate_web(directory, mirror)
     atomic(WORKER, (directory / 'epayctl').read_bytes(), 0o755)
     record(current=version, imageMirror=mirror, result='中心已启动')
 
@@ -262,7 +281,10 @@ def daemon():
     if not current or newer(version, current):
         directory = ROOT / 'releases' / version
         directory.mkdir(exist_ok=True)
-        atomic(directory / COMPOSE, (Path('/usr/local/share/epay') / COMPOSE).read_bytes())
+        live_dir = os.environ.get('EPAY_PROJECT_DIR')
+        live = Path(live_dir) / 'docker-compose.yml' if live_dir else None
+        manifest = live if live and live.is_file() else Path('/usr/local/share/epay') / COMPOSE
+        atomic(directory / COMPOSE, manifest.read_bytes())
         # 手动换用新版 Compose 时，镜像内的更新器已随版本更新。
         WORKER.unlink(missing_ok=True)
         record(current=version, imageMirror=mirror, region=update_region(), result='中心已启动')

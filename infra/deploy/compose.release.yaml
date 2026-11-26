@@ -2,38 +2,34 @@ name: epay-external
 
 services:
   prepare:
+    # 旧更新器按此服务名预拉 API 镜像。常规部署不创建这个容器。
+    profiles: [legacy-updater]
     image: '${EPAY_IMAGE_MIRROR:-}@API_IMAGE@'
-    user: '0:0'
-    volumes:
-      - setup:/run/epay-setup
-      - redis-credentials:/run/redis-secret
-    command:
-      - node
-      - -e
-      - |
-        const fs = require('node:fs');
-        const { randomBytes } = require('node:crypto');
-        fs.chownSync('/run/epay-setup', 1000, 1000);
-        fs.chmodSync('/run/epay-setup', 0o700);
-        const file = '/run/redis-secret/password';
-        if (!fs.existsSync(file)) {
-          const temporary = file + '.tmp';
-          fs.writeFileSync(temporary, randomBytes(32).toString('hex'), { mode: 0o400 });
-          fs.chownSync(temporary, 1000, 1000);
-          fs.renameSync(temporary, file);
-        }
+    command: ['true']
 
   redis:
     image: '${EPAY_IMAGE_MIRROR:-docker.io/}library/redis:7-alpine'
     restart: unless-stopped
     entrypoint: ['/bin/sh', '-ec']
     command:
-      - exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$(cat /run/redis-secret/password)"
+      - |
+        file=/run/redis-secret/password
+        if [ ! -f "$$file" ]; then
+          umask 077
+          tmp=$$(mktemp /run/redis-secret/password.XXXXXX)
+          trap 'rm -f "$$tmp"' EXIT
+          od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$$tmp"
+          test "$$(wc -c < "$$tmp")" -eq 64
+          chown 1000:1000 "$$tmp"
+          chmod 0400 "$$tmp"
+          ln "$$tmp" "$$file" || test -s "$$file"
+          rm -f "$$tmp"
+        fi
+        test -s "$$file"
+        exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$(cat "$$file")"
     volumes:
       - redis:/data
-      - redis-credentials:/run/redis-secret:ro
-    depends_on:
-      prepare: { condition: service_completed_successfully }
+      - redis-credentials:/run/redis-secret
     healthcheck:
       test: ['CMD-SHELL', 'REDISCLI_AUTH="$$(cat /run/redis-secret/password)" redis-cli ping | grep -qx PONG']
       interval: 5s
@@ -62,7 +58,6 @@ services:
       - release-requests:/deploy/requests
       - agent-bundles:/project/apps/api/script-bundles:ro
     depends_on:
-      prepare: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:9528/v1/route/getConstantRoutes').then(r=>{if(!r.ok && r.status!==403)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -89,6 +84,7 @@ services:
       web: { condition: service_healthy }
     environment:
       EPAY_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+      EPAY_PROJECT_DIR: ${EPAY_PROJECT_DIR:-/opt/allinpay}
       EPAY_UPDATE_REGION: ${EPAY_UPDATE_REGION:-global}
       EPAY_IMAGE_MIRROR: ${EPAY_IMAGE_MIRROR:-}
       EPAY_RELEASE_VERSION: '@RELEASE_VERSION@'
@@ -96,6 +92,7 @@ services:
       EPAY_BIND: ${EPAY_BIND:-127.0.0.1:8080}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - '${EPAY_PROJECT_DIR:-/opt/allinpay}:${EPAY_PROJECT_DIR:-/opt/allinpay}'
       - updater-data:/opt/epay
       - release-state:/opt/epay/state
       - release-requests:/opt/epay/requests

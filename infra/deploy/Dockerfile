@@ -11,7 +11,7 @@ COPY apps/api/libs libs
 COPY apps/api/prisma prisma
 COPY apps/api/nest-cli.json apps/api/tsconfig*.json ./
 COPY infra/deploy/setup.cjs infra/deploy/setup.html ./
-RUN pnpm exec prisma generate && pnpm build && mkdir -p logs && chown node logs
+RUN pnpm exec prisma generate && pnpm build && mkdir -p logs && chown node logs && install -d -m 0700 -o node -g node /run/epay-setup
 USER node
 ENV NODE_ENV=production
 CMD ["node", "dist/apps/base-system/src/main.js"]

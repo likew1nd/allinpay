@@ -52,8 +52,9 @@ jobs:
           render "$image:updater-$RELEASE_TAG" > infra/deploy/release-compose.yaml
           updater=$(build updater)
           render "$updater" > compose.pull.yaml
+          sh -n infra/deploy/deploy.sh
           EPAY_IMAGE_MIRROR= docker compose -f compose.pull.yaml config --format json | jq -e \
-            'all(.services[]; .image and (has("build") | not)) and (.services | has("mysql") | not)'
+            'all(.services[]; .image and (has("build") | not)) and (.services | keys == ["api","redis","updater","web"])'
           EPAY_IMAGE_MIRROR=git.5588.la/ docker compose --profile maintenance -f compose.pull.yaml config --format json | jq -e \
             'all(.services[]; .image | startswith("git.5588.la/"))'
           printf '%s\n' "$api" "$web" "$updater" > "$RUNNER_TEMP/center-images"
@@ -72,6 +73,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --latest --title "$RELEASE_TAG" \
-            --notes "Docker Compose 部署和在线更新见 [部署说明](https://github.com/$GITHUB_REPOSITORY/blob/$RELEASE_TAG/README.md)。" \
-            compose.pull.yaml infra/deploy/epayctl
+          gh release create "$RELEASE_TAG" --verify-tag --latest --title "$RELEASE_TAG" \
+            --notes-file "infra/deploy/release-notes/$RELEASE_TAG.md" \
+            compose.pull.yaml infra/deploy/epayctl infra/deploy/deploy.sh
