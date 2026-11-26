@@ -1,0 +1,20 @@
+{
+  "name": "@epay/windows-agent",
+  "private": true,
+  "type": "module",
+  "version": "0.8.23",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test scripts/app-id-parser.test.ts scripts/post-login-inspection.test.ts scripts/browser-lifecycle.test.ts scripts/runtime-lifecycle.test.ts scripts/transfer.test.ts scripts/transfer-reopen.test.ts scripts/transfer-qr.test.ts scripts/environment-exclusive.test.ts scripts/launcher-download.test.cjs",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.0"
+  }
+}
