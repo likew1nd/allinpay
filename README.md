@@ -8,16 +8,16 @@
 
 ```bash
 curl -fsSL https://git.5588.la/https://github.com/likew1nd/allinpay/releases/latest/download/compose.pull.yaml \
-  | EPAY_UPDATE_REGION=cn docker compose -f - up -d --wait
+  | EPAY_UPDATE_REGION=cn EPAY_IMAGE_MIRROR=git.5588.la/ docker compose -f - up -d --wait
 ```
 
-国内线路通过 `git.5588.la` 获取 GitHub 发布信息和附件。中心镜像仍从 GHCR 拉取，Redis 镜像从 Docker Hub 拉取。
+国内线路通过 `git.5588.la` 获取部署清单、GitHub 发布信息和附件，并代理拉取 GHCR 中心镜像、Redis 和升级备份工具镜像。
 
 ### GitHub 直连部署
 
 ```bash
 curl -fsSL https://github.com/likew1nd/allinpay/releases/latest/download/compose.pull.yaml \
-  | EPAY_UPDATE_REGION=global docker compose -f - up -d --wait
+  | EPAY_UPDATE_REGION=global EPAY_IMAGE_MIRROR= docker compose -f - up -d --wait
 ```
 
 ### 完成网页安装
@@ -34,10 +34,10 @@ docker logs epay-external-api-1
 
 ## 更新中心和 Windows Agent
 
-- 中心启动后检查正式版，此后每 30 分钟检查一次。也可在「系统设置 → 版本更新」点击「检查更新」，或切换「更新服务器」。
+- 中心启动后检查正式版，此后每 30 分钟检查一次。也可在「系统设置 → 版本更新」点击「检查更新」或切换「更新服务器」。选择的线路同时用于获取发布附件和拉取新版镜像。
 - 发现新版后，由管理员点击「升级中心」确认。更新器校验正式版附件，拉取镜像，备份已安装的中心数据库并更新容器。安装配置和 Redis 数据继续使用原数据卷。
 - 手动重新应用 Compose 时，从当前或目标版本的 Release 下载对应文件，并沿用原项目名和监听地址。
-- 已使用正式版 `compose.pull.yaml` 部署的实例可以沿用原项目。使用旧宿主机安装流程的实例需要先迁移现有安装配置和数据卷，再切换到 Compose 部署。
+- 使用 `1.0.6` 的实例要启用全程加速，可在新版发布后用上方国内命令重新应用 Compose，并沿用原项目名和数据卷。使用旧宿主机安装流程的实例需要先迁移现有安装配置和数据卷，再切换到 Compose 部署。
 - Windows Agent 在 Windows 上运行。从中心「脚本设置」或 [GitHub Releases](https://github.com/likew1nd/allinpay/releases) 下载完整包，解压并双击 `启动Agent.bat`。在生成的 `.env` 中填入中心 HTTPS 地址、采集端 ID 和 Token，再启动。旧启动器首次接入热更新时，先用完整包或修复包覆盖升级并保留 `.env`。
 - 部署中心会自动同步兼容的 Agent 正式版。采集端在心跳时领取更新，完成当前任务后重启。
 

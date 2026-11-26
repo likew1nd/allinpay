@@ -52,8 +52,10 @@ jobs:
           render "$image:updater-$RELEASE_TAG" > infra/deploy/release-compose.yaml
           updater=$(build updater)
           render "$updater" > compose.pull.yaml
-          docker compose -f compose.pull.yaml config --format json | jq -e \
+          EPAY_IMAGE_MIRROR= docker compose -f compose.pull.yaml config --format json | jq -e \
             'all(.services[]; .image and (has("build") | not)) and (.services | has("mysql") | not)'
+          EPAY_IMAGE_MIRROR=git.5588.la/ docker compose --profile maintenance -f compose.pull.yaml config --format json | jq -e \
+            'all(.services[]; .image | startswith("git.5588.la/"))'
           printf '%s\n' "$api" "$web" "$updater" > "$RUNNER_TEMP/center-images"
       - name: 验证部署端可以匿名拉取公开镜像
         if: ${{ !github.event.repository.private }}

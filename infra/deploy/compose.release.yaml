@@ -2,7 +2,7 @@ name: epay-external
 
 services:
   prepare:
-    image: '@API_IMAGE@'
+    image: '${EPAY_IMAGE_MIRROR:-}@API_IMAGE@'
     user: '0:0'
     volumes:
       - setup:/run/epay-setup
@@ -24,7 +24,7 @@ services:
         }
 
   redis:
-    image: redis:7-alpine
+    image: '${EPAY_IMAGE_MIRROR:-docker.io/}library/redis:7-alpine'
     restart: unless-stopped
     entrypoint: ['/bin/sh', '-ec']
     command:
@@ -41,7 +41,7 @@ services:
       retries: 12
 
   api:
-    image: '@API_IMAGE@'
+    image: '${EPAY_IMAGE_MIRROR:-}@API_IMAGE@'
     init: true
     restart: unless-stopped
     command: ['node', 'setup.cjs']
@@ -71,7 +71,7 @@ services:
       retries: 24
 
   web:
-    image: '@WEB_IMAGE@'
+    image: '${EPAY_IMAGE_MIRROR:-}@WEB_IMAGE@'
     restart: unless-stopped
     ports: ['${EPAY_BIND:-127.0.0.1:8080}:80']
     depends_on:
@@ -83,13 +83,14 @@ services:
       retries: 12
 
   updater:
-    image: '@UPDATER_IMAGE@'
+    image: '${EPAY_IMAGE_MIRROR:-}@UPDATER_IMAGE@'
     restart: unless-stopped
     depends_on:
       web: { condition: service_healthy }
     environment:
       EPAY_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
       EPAY_UPDATE_REGION: ${EPAY_UPDATE_REGION:-global}
+      EPAY_IMAGE_MIRROR: ${EPAY_IMAGE_MIRROR:-}
       EPAY_RELEASE_VERSION: '@RELEASE_VERSION@'
       EPAY_REPOSITORY: '@REPOSITORY@'
       EPAY_BIND: ${EPAY_BIND:-127.0.0.1:8080}
@@ -102,7 +103,7 @@ services:
 
   mysql-tools:
     profiles: [maintenance]
-    image: mysql:8.4
+    image: '${EPAY_IMAGE_MIRROR:-docker.io/}library/mysql:8.4'
     entrypoint: [mysqldump]
     extra_hosts:
       - 'host.docker.internal:host-gateway'

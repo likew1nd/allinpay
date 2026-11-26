@@ -25,6 +25,7 @@ VERSION = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
 PROJECT = os.environ.get('EPAY_COMPOSE_PROJECT', 'epay-external')
 WORKER = ROOT / 'epayctl'
 COMPOSE = 'compose.pull.yaml'
+CN_MIRROR = 'git.5588.la/'
 
 
 def atomic(path, data, mode=0o600):
@@ -62,7 +63,7 @@ def set_region(value):
 
 
 def regional_url(url):
-    return 'https://git.5588.la/' + url if update_region() == 'cn' else url
+    return 'https://' + CN_MIRROR + url if update_region() == 'cn' else url
 
 
 def request(url, *, accept='application/vnd.github+json'):
@@ -127,10 +128,11 @@ def catalog(rows):
     record(region=update_region(), available=available, checked=dt.datetime.now(dt.timezone.utc).isoformat(), checkError='')
 
 
-def compose(directory, *args, **kwargs):
+def compose(directory, *args, mirror, env=None, **kwargs):
     command = ['docker', 'compose', '--project-name', PROJECT, '--env-file', '/dev/null',
                '-f', str(directory / COMPOSE)]
-    return subprocess.run(command + list(args), check=True, **kwargs)
+    environment = {**(os.environ if env is None else env), 'EPAY_IMAGE_MIRROR': mirror}
+    return subprocess.run(command + list(args), check=True, env=environment, **kwargs)
 
 
 def setup():
@@ -140,13 +142,13 @@ def setup():
     os.chmod(REQUESTS, 0o700)
 
 
-def save_backup(previous):
+def save_backup(previous, directory, *, previous_mirror, mirror):
     query = "SELECT COUNT(*) FROM transfer_request WHERE status IN ('PREPARING','CLAIMED')"
     configuration = compose(
-        previous, 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'node', 'api', '-e',
+        previous, 'run', '--rm', '--no-deps', '--pull', 'never', '-T', '--entrypoint', 'node', 'api', '-e',
         "const fs = require('node:fs'); const file = '/run/epay-setup/installed.json'; "
         "if (fs.existsSync(file)) process.stdout.write(fs.readFileSync(file));",
-        capture_output=True,
+        mirror=previous_mirror, capture_output=True,
     ).stdout
     if not configuration:
         return
@@ -156,27 +158,28 @@ def save_backup(previous):
                   '--user=' + urllib.parse.unquote(url.username or '')]
     env = {**os.environ, 'MYSQL_PWD': urllib.parse.unquote(url.password or '')}
     run = ['run', '--rm', '--no-deps', '-T', '-e', 'MYSQL_PWD']
-    count = compose(previous, *run, '--entrypoint', 'mysql', 'mysql-tools', *mysql_args,
-                    '-N', '--database=' + database, '-e', query, env=env,
+    count = compose(directory, *run, '--entrypoint', 'mysql', 'mysql-tools', *mysql_args,
+                    '-N', '--database=' + database, '-e', query, mirror=mirror, env=env,
                     capture_output=True, text=True).stdout.strip()
     if count != '0':
         raise RuntimeError('有采集端正在执行转账，已恢复原服务，请等待任务结束')
 
     backup = ROOT / 'backups' / (previous.name + '-' + secrets.token_hex(4))
     with tempfile.TemporaryDirectory(dir=backup.parent) as temporary:
-        directory = Path(temporary)
-        atomic(directory / 'setup.json', configuration)
-        with (directory / 'database.sql').open('wb') as output:
-            compose(previous, *run, 'mysql-tools', *mysql_args, '--single-transaction',
+        pending = Path(temporary)
+        atomic(pending / 'setup.json', configuration)
+        with (pending / 'database.sql').open('wb') as output:
+            compose(directory, *run, 'mysql-tools', *mysql_args, '--single-transaction',
                     '--no-tablespaces', '--set-gtid-purged=OFF', '--column-statistics=0',
-                    '--databases', database, env=env, stdout=output)
-        directory.rename(backup)
+                    '--databases', database, mirror=mirror, env=env, stdout=output)
+        pending.rename(backup)
     record(backup=str(backup))
 
 
 def center(release):
     version = release['version']
-    old = status().get('current')
+    installed = status()
+    old = installed.get('current')
     if not isinstance(old, str) or not re.fullmatch(VERSION, old):
         raise RuntimeError('中心尚未记录当前版本，无法升级')
     if not newer(version, old):
@@ -191,22 +194,25 @@ def center(release):
     directory.mkdir(exist_ok=True)
     for name in (COMPOSE, 'epayctl'):
         fetch_asset(release, name, directory)
+    mirror = CN_MIRROR if update_region() == 'cn' else ''
+    previous_mirror = installed.get('imageMirror', '')
     try:
-        compose(directory, 'pull', '--policy', 'missing', 'prepare', 'redis', 'api', 'web')
+        compose(directory, 'pull', '--policy', 'missing', 'prepare', 'redis', 'api', 'web', mirror=mirror)
     except subprocess.CalledProcessError as error:
-        raise RuntimeError('镜像拉取失败，请检查 Docker 到 GHCR 和 Docker Hub 的连接及镜像读取权限') from error
+        registry = mirror.rstrip('/') if mirror else 'GHCR 和 Docker Hub'
+        raise RuntimeError(f'镜像拉取失败，请检查 Docker 到 {registry} 的连接及镜像读取权限') from error
 
     try:
-        compose(previous, 'stop', 'web', 'api')
-        save_backup(previous)
+        compose(previous, 'stop', 'web', 'api', mirror=previous_mirror)
+        save_backup(previous, directory, previous_mirror=previous_mirror, mirror=mirror)
     except Exception:
-        compose(previous, 'up', '-d', '--wait', '--no-build', 'web')
+        compose(previous, 'up', '-d', '--wait', '--no-build', 'web', mirror=previous_mirror)
         raise
 
     # 更新器继续运行，避免 Compose 中途替换正在执行升级的容器。
-    compose(directory, 'up', '-d', '--wait', '--no-build', 'web')
+    compose(directory, 'up', '-d', '--wait', '--no-build', 'web', mirror=mirror)
     atomic(WORKER, (directory / 'epayctl').read_bytes(), 0o755)
-    record(current=version, result='中心已启动')
+    record(current=version, imageMirror=mirror, result='中心已启动')
 
 
 def agent(release):
@@ -250,14 +256,18 @@ def daemon():
     version = os.environ['EPAY_RELEASE_VERSION']
     if not re.fullmatch(VERSION, version):
         raise ValueError('Compose 中的中心版本号无效')
-    current = status().get('current')
+    installed = status()
+    current = installed.get('current')
+    mirror = os.environ.get('EPAY_IMAGE_MIRROR', '')
     if not current or newer(version, current):
         directory = ROOT / 'releases' / version
         directory.mkdir(exist_ok=True)
         atomic(directory / COMPOSE, (Path('/usr/local/share/epay') / COMPOSE).read_bytes())
         # 手动换用新版 Compose 时，镜像内的更新器已随版本更新。
         WORKER.unlink(missing_ok=True)
-        record(current=version, region=update_region(), result='中心已启动')
+        record(current=version, imageMirror=mirror, region=update_region(), result='中心已启动')
+    elif version == current and installed.get('imageMirror', '') != mirror:
+        record(imageMirror=mirror)
     next_check = 0
     while True:
         executable = WORKER if WORKER.is_file() else Path(__file__)
