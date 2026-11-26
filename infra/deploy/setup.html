@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安装易支付中心</title>
+  <style>
+    :root {
+      --canvas: #f3f6fb;
+      --surface: #fff;
+      --text: #142438;
+      --muted: #4b5e73;
+      --line: #d8e1ed;
+      --input-line: #8295ab;
+      --primary: #1459b1;
+      --primary-hover: #0d458d;
+      --error: #a42631;
+      --error-bg: #fff2f3;
+      font: 16px/1.55 system-ui, "Microsoft YaHei", sans-serif;
+      background: var(--canvas);
+      color: var(--text);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; padding: clamp(1rem, 4vw, 3rem); }
+    main { max-width: 46rem; margin: 0 auto; padding: clamp(1rem, 4vw, 2rem); background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; }
+    h1 { font-size: clamp(1.55rem, 4vw, 2rem); line-height: 1.2; margin: 0 0 .5rem; }
+    p { margin: 0; color: var(--muted); }
+    form { display: grid; gap: 1.25rem; margin-top: 1.5rem; }
+    fieldset { margin: 0; min-inline-size: 0; padding: .85rem 0 0; border: 0; border-top: 1px solid var(--line); }
+    legend { padding: 0 .65rem 0 0; font-weight: 650; }
+    .fields { display: grid; gap: .9rem; }
+    .wide { grid-column: 1 / -1; }
+    label { display: grid; gap: .35rem; min-width: 0; font-weight: 550; }
+    input, button { font: inherit; min-height: 2.8rem; border-radius: .45rem; }
+    input { width: 100%; padding: .55rem .7rem; border: 1px solid var(--input-line); background: var(--surface); color: var(--text); }
+    input:focus-visible, button:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+    small { font-size: .875rem; color: var(--muted); font-weight: 400; }
+    button { justify-self: start; padding: .55rem 1rem; border: 0; background: var(--primary); color: white; font-weight: 650; cursor: pointer; }
+    button:hover:enabled { background: var(--primary-hover); }
+    button:disabled { opacity: .65; cursor: wait; }
+    #status:empty { display: none; }
+    #status[data-error] { padding: .7rem .85rem; border-radius: .45rem; color: var(--error); background: var(--error-bg); }
+    @media (min-width: 36rem) { .fields { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>安装易支付中心</h1>
+      <p>连接 MySQL 并创建管理员。</p>
+    </header>
+    <form id="setup" method="post" action="/v1/install" autocomplete="off">
+      <label>一次性安装码
+        <input name="token" type="password" required aria-describedby="token-help" autocomplete="off">
+        <small id="token-help">在 API 容器日志中查看。</small>
+      </label>
+      <fieldset>
+        <legend>MySQL 数据库</legend>
+        <div class="fields">
+          <label class="wide">主机地址
+            <input name="host" value="host.docker.internal" required aria-describedby="host-help" spellcheck="false">
+            <small id="host-help">填写 API 容器能访问的 MySQL 地址。同机数据库可尝试 host.docker.internal。</small>
+          </label>
+          <label>端口<input name="port" type="number" min="1" max="65535" value="3306" required></label>
+          <label>库名<input name="database" value="epay_operations" required></label>
+          <label>数据库用户名<input name="username" required></label>
+          <label>数据库密码<input name="password" type="password" autocomplete="new-password"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>管理员</legend>
+        <div class="fields">
+          <label>用户名<input name="adminUsername" value="admin" required pattern="[a-zA-Z0-9_.\-]+" maxlength="64"></label>
+          <label>密码<input name="adminPassword" type="password" required minlength="6" autocomplete="new-password"></label>
+        </div>
+      </fieldset>
+      <button type="submit">验证并安装</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+  <script>
+    const form = document.querySelector('#setup');
+    const button = form.querySelector('button');
+    const status = document.querySelector('#status');
+
+    function report(message, error = false) {
+      status.toggleAttribute('data-error', error);
+      status.textContent = message;
+    }
+
+    async function waitForCenter() {
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        const response = await fetch('/v1/route/getConstantRoutes', { cache: 'no-store' }).catch(() => null);
+        if (response?.ok) {
+          location.replace('/');
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      throw new Error('安装配置已保存。请查看 API 容器日志，启动后重新打开首页。');
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const { token, ...configuration } = Object.fromEntries(new FormData(form));
+      button.disabled = true;
+      report('正在连接 MySQL 并初始化数据库…');
+      try {
+        const response = await fetch('/v1/install', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token.trim() },
+          body: JSON.stringify(configuration),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.installed) throw new Error(result?.message || '请求未完成，请查看 API 容器日志后重试。');
+        form.reset();
+        report('数据库已初始化，正在启动中心…');
+        await waitForCenter();
+      } catch (error) {
+        report(error.message, true);
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+apps/api/prisma/migrations/202611241300_telegram_channel_notice_library/migration.sql text eol=lf
+apps/api/prisma/migrations/202611241400_align_channel_notice_migration_checksum/migration.sql text eol=lf

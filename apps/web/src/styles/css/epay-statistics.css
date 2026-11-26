@@ -1,0 +1,43 @@
+/* 业务页头部与指标卡共用采集管理的视觉规范。 */
+.epay-page-heading.epay-statistics-heading {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 3fr);
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px;
+}
+.epay-statistics-heading .epay-page-heading-main { gap: 14px; }
+.epay-page-heading.epay-statistics-heading h1 { font-size: 24px; }
+.epay-statistics__cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; min-width: 0; margin: 0; }
+.epay-statistics__cards.epay-statistics__cards--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.epay-statistics__card { --stat-color: var(--epay-action-ink); --stat-soft: var(--epay-success-soft); min-width: 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--epay-edge) 60%, var(--epay-surface)); border-radius: 14px; background: var(--epay-surface); }
+.epay-statistics__card[data-tone='green'] { --stat-color: var(--epay-monitoring); --stat-soft: color-mix(in srgb, var(--epay-monitoring) 10%, var(--epay-surface)); }
+.epay-statistics__card[data-tone='amber'] { --stat-color: var(--epay-warning); --stat-soft: var(--epay-warning-soft); }
+.epay-statistics__label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--epay-muted); font-size: 13px; font-weight: 500; }
+.epay-statistics__label > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.epay-statistics__icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--stat-soft); color: var(--stat-color); font-size: 17px; }
+.epay-statistics__value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 7px 0 5px; color: var(--epay-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.epay-statistics__value strong { min-width: 0; color: var(--stat-color); font-size: 27px; font-weight: 650; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
+.epay-statistics__value > span { min-width: 0; overflow-wrap: anywhere; }
+.epay-statistics__chart { margin: 7px 0 0; }
+.epay-statistics__chart > dl { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; margin: 0; text-align: center; }
+.epay-statistics__chart > dl > div { display: grid; grid-template-rows: 1fr auto; align-content: end; }
+.epay-statistics__chart dt { grid-row: 2; margin-top: 4px; color: var(--epay-muted); font-size: 12px; overflow-wrap: anywhere; }
+.epay-statistics__chart dd { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; margin: 0; color: var(--stat-color); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.epay-statistics__bar-track { display: flex; flex: none; align-items: flex-end; width: min(100%, 22px); height: 30px; box-sizing: border-box; overflow: hidden; border-radius: 3px; background: var(--stat-soft); }
+.epay-statistics__bar-track > span { width: 100%; background: var(--stat-color); }
+.epay-statistics__bar-track.is-empty { border: 1px dashed var(--epay-edge); background: transparent; }
+.epay-statistics__hint, .epay-statistics__warning { margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.epay-statistics__hint { color: var(--epay-muted); }
+.epay-statistics__warning { margin-top: 3px; color: var(--epay-warning); }
+.epay-statistics__alert { grid-column: 1 / -1; }
+@media (max-width: 1200px) {
+  .epay-page-heading.epay-statistics-heading { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .epay-page-heading.epay-statistics-heading { padding: 18px 16px; gap: 16px; }
+  .epay-statistics__cards, .epay-statistics__cards.epay-statistics__cards--three { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .epay-statistics__card { padding: 12px; }
+  .epay-statistics__card--chart { grid-column: 1 / -1; }
+  .epay-statistics__value strong { font-size: 24px; }
+}

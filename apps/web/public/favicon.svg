@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+  <defs>
+    <linearGradient id="forest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#42a5ff" />
+      <stop offset="1" stop-color="#007aff" />
+    </linearGradient>
+  </defs>
+  <rect width="36" height="36" rx="8" fill="#0f1b2d" />
+  <path d="M3 18 8 10l5 8v14H3z" fill="url(#forest)" opacity=".78" />
+  <path d="m13 13 5-9 5 9v19H13z" fill="url(#forest)" />
+  <path d="m23 18 5-8 5 8v14H23z" fill="url(#forest)" opacity=".9" />
+</svg>

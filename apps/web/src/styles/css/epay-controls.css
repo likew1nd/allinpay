@@ -1,0 +1,484 @@
+/* 工作区和传送到 body 的浮层使用同一套控件材质。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message, .el-message-box, .el-notification, .tree-context-menu) {
+  --el-color-primary: var(--epay-blue);
+  --el-color-success: var(--epay-success);
+  --el-color-success-dark-2: color-mix(in srgb, var(--epay-success) 80%, #000);
+  --el-color-success-light-3: color-mix(in srgb, var(--epay-success) 65%, var(--epay-surface));
+  --el-color-success-light-5: color-mix(in srgb, var(--epay-success) 22%, var(--epay-surface));
+  --el-color-success-light-7: var(--epay-success-soft);
+  --el-color-success-light-9: var(--epay-success-soft);
+  --el-color-warning: var(--epay-warning);
+  --el-color-warning-light-3: color-mix(in srgb, var(--epay-warning) 65%, var(--epay-surface));
+  --el-color-warning-light-5: color-mix(in srgb, var(--epay-warning) 22%, var(--epay-surface));
+  --el-color-warning-light-7: var(--epay-warning-soft);
+  --el-color-warning-light-9: var(--epay-warning-soft);
+  --el-color-danger: var(--epay-danger);
+  --el-color-danger-light-3: color-mix(in srgb, var(--epay-danger) 65%, var(--epay-surface));
+  --el-color-danger-light-5: color-mix(in srgb, var(--epay-danger) 22%, var(--epay-surface));
+  --el-color-danger-light-7: var(--epay-danger-soft);
+  --el-color-danger-light-9: var(--epay-danger-soft);
+  --el-color-error: var(--epay-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--epay-danger-soft);
+  --el-color-error-light-8: var(--epay-danger-soft);
+  --el-color-error-light-9: var(--epay-danger-soft);
+  --el-color-info: var(--epay-text);
+  --el-color-info-light-8: var(--epay-edge);
+  --el-color-info-light-9: var(--epay-tint);
+  --el-color-primary-light-9: var(--epay-soft);
+  --el-color-primary-light-8: var(--epay-soft);
+  --el-text-color-primary: var(--epay-heading);
+  --el-text-color-regular: var(--epay-text);
+  --el-text-color-secondary: var(--epay-muted);
+  --el-text-color-placeholder: var(--epay-muted);
+  --el-border-color: var(--epay-edge);
+  --el-border-color-light: var(--epay-edge);
+  --el-border-color-lighter: var(--epay-edge);
+  --el-fill-color-blank: var(--epay-surface);
+  --el-fill-color-light: var(--epay-tint);
+  --el-fill-color-lighter: var(--epay-tint);
+  --el-bg-color: var(--epay-surface);
+  --el-bg-color-overlay: var(--epay-surface);
+  --el-font-size-base: 14px;
+  --el-border-radius-base: 12px;
+}
+.epay-layout .el-card {
+  --el-card-padding: 24px;
+  --el-card-border-color: var(--epay-edge);
+  border: 1px solid var(--epay-edge);
+  border-radius: 20px;
+  background: var(--epay-surface);
+  box-shadow: var(--epay-shadow);
+}
+.epay-layout .el-card > .el-card__header { padding: 24px 24px 18px; border-bottom: 0; color: var(--epay-heading); font-size: 17px; font-weight: 600; letter-spacing: -.25px; }
+.epay-layout .el-card__header + .el-card__body { padding-top: 0; }
+.epay-layout .el-card__body { height: auto; min-width: 0; color: var(--epay-text); }
+.epay-layout .el-card__header > .flex { flex-wrap: wrap; gap: 12px; }
+/* 按钮按主操作、次操作、表格操作分层；状态标签保留静态外观。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button {
+  --epay-button-ink: var(--epay-action-ink);
+  height: 38px; padding-inline: 15px; border-radius: 100px; font-size: 13px; font-weight: 500;
+  touch-action: manipulation;
+  transition: color 180ms, background-color 180ms, border-color 180ms, box-shadow 180ms, translate 180ms var(--epay-ease), scale 120ms var(--epay-ease);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--small { height: 30px; padding-inline: 10px; font-size: 12px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--large { height: 44px; padding-inline: 19px; font-size: 14px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button.is-circle { width: 38px; padding: 0; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--success { --epay-button-ink: var(--epay-success); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--warning { --epay-button-ink: var(--epay-warning); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--danger { --epay-button-ink: var(--epay-danger); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--info { --epay-button-ink: var(--epay-muted); }
+/* Element Plus 的默认按钮没有 --default 类，按实际生成的类名匹配。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button:where(:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info, .is-text, .is-link, :disabled, .is-disabled)) {
+  color: var(--epay-text); background: var(--epay-control); border-color: var(--epay-edge);
+  box-shadow: inset 0 1px var(--epay-glass-edge), 0 2px 4px #18385804;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button.is-plain {
+  color: var(--epay-button-ink);
+  background: color-mix(in srgb, var(--epay-button-ink) 7%, var(--epay-surface));
+  border-color: color-mix(in srgb, var(--epay-button-ink) 32%, var(--epay-edge));
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(:disabled):not(.is-disabled) {
+  background: var(--epay-blue); border-color: var(--epay-blue); color: #fff;
+  box-shadow: inset 0 1px #ffffff30, 0 3px 8px color-mix(in srgb, var(--epay-blue) 22%, transparent);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button.is-link {
+  height: auto; min-height: 30px; padding: 4px 8px; border: 1px solid transparent; border-radius: 8px;
+  color: var(--epay-button-ink); background: transparent; font-size: 13px;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button.is-text {
+  color: var(--epay-button-ink); background: transparent; border-color: transparent;
+}
+
+@media (hover: hover) {
+  :is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button:not(:disabled):not(.is-disabled):not(.is-loading):hover {
+    color: var(--epay-button-ink);
+    background: color-mix(in srgb, var(--epay-button-ink) 12%, var(--epay-surface));
+    border-color: color-mix(in srgb, var(--epay-button-ink) 48%, var(--epay-edge));
+    box-shadow: 0 3px 8px #18385812; translate: 0 -1px;
+  }
+  :is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(:disabled):not(.is-disabled):not(.is-loading):hover {
+    color: #fff; background: color-mix(in srgb, var(--epay-blue) 84%, #000); border-color: color-mix(in srgb, var(--epay-blue) 84%, #000);
+  }
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button:not(:disabled):not(.is-disabled):not(.is-loading):active {
+  translate: 0 0; scale: .97; box-shadow: none;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button:focus-visible {
+  outline: 2px solid var(--epay-blue); outline-offset: 2px;
+}
+/* 表格单元格会裁切溢出内容，表格按钮的悬停和焦点反馈留在自身边界内。 */
+:is(.epay-layout, .el-overlay, .el-popper) .el-table .cell .el-button:not(:disabled):not(.is-disabled):not(.is-loading):hover {
+  translate: none;
+}
+:is(.epay-layout, .el-overlay, .el-popper) .el-table .cell .el-button:focus-visible {
+  outline-offset: -2px;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button:is(:disabled, .is-disabled, .is-disabled:hover, .is-disabled:focus, .is-disabled:active):not(.is-loading) {
+  color: var(--epay-muted); background: var(--epay-tint); border-color: var(--epay-edge);
+  opacity: .6; cursor: not-allowed; box-shadow: none; translate: none; scale: none; transition: none;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-button.is-loading {
+  cursor: wait; opacity: .75; translate: none; scale: none; box-shadow: none; transition: none;
+}
+:is(.epay-layout, .el-overlay) :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
+  border-radius: 12px; background: var(--epay-tint); box-shadow: 0 0 0 1px var(--epay-edge) inset;
+  transition: box-shadow 180ms, background 180ms;
+}
+:is(.epay-layout, .el-overlay) :is(.el-input__wrapper, .el-select__wrapper) { min-height: 38px; padding-inline: 12px; }
+:is(.epay-layout, .el-overlay) :is(.el-input__wrapper.is-focus, .el-select__wrapper.is-focused, .el-textarea__inner:focus) {
+  background: var(--epay-surface); box-shadow: 0 0 0 1px var(--epay-blue) inset, 0 0 0 3px color-mix(in srgb, var(--epay-blue) 12%, transparent);
+}
+:is(.epay-layout, .el-overlay) .el-form-item__label { color: var(--epay-muted); font-weight: 400; }
+:is(.epay-layout, .el-overlay) .el-form--inline .el-form-item { margin-bottom: 14px; }
+:is(.epay-layout, .el-overlay) .el-tag { border-color: transparent; border-radius: 7px; height: 26px; padding-inline: 8px; font-weight: 400; }
+:is(.epay-layout, .el-overlay) .el-tag--small { height: 24px; }
+:is(.epay-layout, .el-overlay) .el-tag--success { --el-tag-text-color: var(--epay-success); --el-tag-bg-color: var(--epay-success-soft); }
+:is(.epay-layout, .el-overlay) .el-tag--warning { --el-tag-text-color: var(--epay-warning); --el-tag-bg-color: var(--epay-warning-soft); }
+:is(.epay-layout, .el-overlay) .el-tag--danger { --el-tag-text-color: var(--epay-danger); --el-tag-bg-color: var(--epay-danger-soft); }
+:is(.epay-layout, .el-overlay) .el-tag--info { --el-tag-text-color: var(--epay-muted); --el-tag-bg-color: var(--epay-tint); }
+/* 页面、抽屉和浮层共用表格规则；颜色由现有主题推导。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table {
+  --epay-table-edge: color-mix(in srgb, var(--epay-edge) 60%, var(--epay-surface));
+  --el-table-header-bg-color: color-mix(in srgb, var(--epay-track) 60%, var(--epay-surface));
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--epay-blue) 7%, var(--epay-surface));
+  --el-table-current-row-bg-color: color-mix(in srgb, var(--epay-blue) 12%, var(--epay-surface));
+  --el-table-border-color: var(--epay-table-edge);
+  --el-table-bg-color: var(--epay-surface);
+  --el-table-tr-bg-color: var(--epay-surface);
+  --el-table-expanded-cell-bg-color: var(--epay-tint);
+  --el-table-text-color: var(--epay-text);
+  --el-table-header-text-color: var(--epay-text);
+  --el-table-fixed-left-column: inset 8px 0 8px -8px color-mix(in srgb, var(--epay-heading) 14%, transparent);
+  --el-table-fixed-right-column: inset -8px 0 8px -8px color-mix(in srgb, var(--epay-heading) 14%, transparent);
+  --el-component-size: 32px;
+  --el-disabled-bg-color: var(--epay-tint);
+  --el-disabled-text-color: var(--epay-muted);
+  --el-disabled-border-color: var(--epay-table-edge);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--epay-table-edge) inset;
+  color: var(--epay-text); font-size: 13px; font-variant-numeric: tabular-nums;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table th.el-table__cell { padding-block: 12px; font-weight: 600; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table td.el-table__cell { padding-block: 12px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .cell { padding-inline: 16px; line-height: 22px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table th.el-table__cell:not(.is-center):not(.is-right),
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table td.el-table__cell:not(.is-center):not(.is-right) { text-align: left; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table--border .el-table__cell { border-right: 0; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table--border::before,
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table--border::after,
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table__border-left-patch { display: none; }
+/* 普通列和固定列使用相同的不透明底色，避免继承背景和透明过渡造成色块断层。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-table__body tr > td.el-table__cell {
+  background-color: var(--el-table-tr-bg-color);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-table__body tr.current-row > td.el-table__cell {
+  background-color: var(--el-table-current-row-bg-color);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-table__body tr > td.el-table__cell.hover-cell,
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-table__body tr.hover-row > td.el-table__cell,
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background-color: var(--el-table-row-hover-bg-color);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table--striped .el-table__body tr.el-table__row--striped:not(:hover):not(.hover-row):not(.current-row) > td.el-table__cell {
+  background: var(--epay-tint);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table__empty-text { color: var(--epay-muted); line-height: 24px; padding-block: 24px; }
+/* 表格内的轻量操作统一尺寸，保留主操作和危险操作的语义色。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button {
+  height: 30px; min-height: 30px; padding: 4px 8px; border-radius: 8px; font-size: 12px;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button:is(.is-link, .is-text) {
+  padding-inline: 6px;
+  color: var(--epay-button-ink);
+  background: color-mix(in srgb, var(--epay-button-ink) 6%, var(--epay-surface));
+  border: 1px solid color-mix(in srgb, var(--epay-button-ink) 18%, var(--epay-surface));
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button + .el-button { margin-left: 6px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button.is-circle { width: 30px; padding: 0; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :focus-visible { outline-offset: -2px; }
+/* 焦点描边留在单元格内，输入校验与禁用状态仍由组件管理。 */
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
+  border-radius: 8px; background: var(--epay-surface);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input__wrapper, .el-select__wrapper) { min-height: 32px; padding-inline: 10px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input, .el-select, .el-textarea) { font-size: 13px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input__wrapper.is-focus, .el-select__wrapper.is-focused, .el-textarea__inner:focus) {
+  box-shadow: 0 0 0 2px var(--epay-action-ink) inset;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input.is-disabled .el-input__wrapper, .el-select__wrapper.is-disabled, .el-textarea.is-disabled .el-textarea__inner) {
+  background: var(--epay-tint); box-shadow: 0 0 0 1px var(--epay-table-edge) inset;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number { min-width: 0; max-width: 100%; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number .el-input__wrapper { padding-inline: 34px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number.is-controls-right .el-input__wrapper { padding-left: 10px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number.is-without-controls .el-input__wrapper { padding-inline: 10px; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input-number__increase, .el-input-number__decrease) {
+  width: 28px; color: var(--epay-text); background: var(--epay-tint);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input-number__increase, .el-input-number__decrease).is-disabled,
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number.is-disabled :is(.el-input-number__increase, .el-input-number__decrease) { color: var(--epay-muted); cursor: not-allowed; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-switch {
+  --el-switch-on-color: var(--epay-success); --el-switch-off-color: var(--epay-danger);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-checkbox {
+  --el-checkbox-bg-color: var(--epay-surface);
+  --el-checkbox-input-border: 1px solid var(--epay-edge);
+  --el-checkbox-checked-bg-color: var(--epay-action-ink);
+  --el-checkbox-checked-input-border-color: var(--epay-action-ink);
+  --el-checkbox-checked-text-color: var(--epay-action-ink);
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag {
+  --epay-tag-ink: var(--epay-action-ink); --epay-tag-fill: var(--epay-success-soft);
+  --el-tag-text-color: var(--epay-tag-ink); --el-tag-bg-color: var(--epay-tag-fill);
+  --el-tag-border-color: color-mix(in srgb, var(--epay-tag-ink) 18%, var(--epay-surface));
+  height: 24px; padding-inline: 7px; border: 1px solid var(--el-tag-border-color); border-radius: 6px; font-size: 12px; line-height: 20px;
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--success { --epay-tag-ink: var(--epay-success); --epay-tag-fill: var(--epay-success-soft); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--warning { --epay-tag-ink: var(--epay-warning); --epay-tag-fill: var(--epay-warning-soft); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--danger { --epay-tag-ink: var(--epay-danger); --epay-tag-fill: var(--epay-danger-soft); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--info { --epay-tag-ink: var(--epay-muted); --epay-tag-fill: var(--epay-tint); }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--plain { --el-tag-bg-color: transparent; }
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-tag--dark {
+  --el-tag-text-color: var(--epay-surface); --el-tag-bg-color: var(--epay-tag-ink);
+}
+@media (hover: hover) {
+  :is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button:is(.is-link, .is-text):not(:disabled):not(.is-disabled):not(.is-loading):hover {
+    background: color-mix(in srgb, var(--epay-button-ink) 12%, var(--epay-surface));
+    border-color: color-mix(in srgb, var(--epay-button-ink) 38%, var(--epay-surface)); box-shadow: none;
+  }
+  :is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-input-number:not(.is-disabled) :is(.el-input-number__increase, .el-input-number__decrease):not(.is-disabled):hover {
+    color: var(--epay-action-ink); background: var(--epay-soft);
+  }
+}
+:is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table .el-button:is(:disabled, .is-disabled):not(.is-loading) {
+  color: var(--epay-muted); background: var(--epay-tint); border-color: var(--epay-table-edge); box-shadow: none;
+}
+/* 列表统一在同一卡片内放置操作栏、筛选和表格，避免重复页面标题。 */
+:is(.epay-layout, .el-overlay) .epay-table-toolbar {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 20px;
+  margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--epay-edge);
+}
+:is(.epay-layout, .el-overlay) .epay-table-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
+  max-width: 100%; margin-left: auto;
+}
+:is(.epay-layout, .el-overlay) .epay-table-toolbar > .epay-table-search {
+  flex: 1 1 560px; min-width: 0; margin: 0; padding: 0; border: 0;
+}
+:is(.epay-layout, .el-overlay) .epay-table-search {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+  margin: 0 0 16px; padding-bottom: 14px; border-bottom: 1px solid var(--epay-edge);
+}
+:is(.epay-layout, .el-overlay) .epay-table-search .el-form-item { max-width: 100%; margin: 0; }
+:is(.epay-layout, .el-overlay) .epay-table-search .el-form-item__content { min-width: 0; }
+:is(.epay-layout, .el-overlay) .epay-table-search .el-input { --el-input-width: 220px; max-width: 100%; }
+:is(.epay-layout, .el-overlay) .epay-table-search .el-select { --el-select-width: 160px; max-width: 100%; }
+@media (max-width: 640px) {
+  :is(.epay-layout, .el-overlay) .epay-table-search { align-items: stretch; gap: 12px; }
+  :is(.epay-layout, .el-overlay) .epay-table-search .el-form-item { margin-right: 0; }
+}
+
+:is(.epay-layout, .el-overlay) .el-pagination { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+:is(.epay-layout, .el-overlay) .el-pagination :is(.btn-prev, .btn-next, .el-pager li) { border-radius: 10px; background: var(--epay-tint); font-weight: 400; }
+:is(.epay-layout, .el-overlay) .el-pagination .el-pager li.is-active { color: var(--epay-blue); background: var(--epay-soft); font-weight: 600; }
+:is(.epay-layout, .el-overlay) .el-pagination .el-select__wrapper { min-height: 32px; }
+:is(.epay-layout, .el-overlay) .el-tabs__item { font-size: 14px; font-weight: 500; }
+:is(.epay-layout, .el-overlay) .el-tabs__nav-wrap::after { height: 1px; background: var(--epay-edge); }
+:is(.epay-layout, .el-overlay) .el-tabs__active-bar { height: 3px; border-radius: 3px; transition: transform 300ms var(--epay-spring); }
+:is(.epay-layout, .el-overlay) .el-alert { border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 12px; }
+:is(.epay-layout, .el-overlay) :focus-visible { outline: 2px solid var(--epay-blue); outline-offset: 3px; }
+:is(.epay-layout, .el-overlay) :is(.el-input__inner, .el-select__input):focus-visible { outline: none; }
+.el-overlay { background: #12233838; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+html.dark .el-overlay { background: #050b1866; }
+.el-dialog, .el-message-box, .el-drawer:not(.epay-mobile-navigation) {
+  color: var(--epay-text); background: var(--epay-glass); border: 1px solid var(--epay-glass-edge);
+  border-radius: 24px; box-shadow: var(--epay-float-shadow); backdrop-filter: blur(30px) saturate(130%); -webkit-backdrop-filter: blur(30px) saturate(130%);
+}
+/* 对话框按视口居中，长内容只滚动正文，标题和操作区保持可见。 */
+.el-overlay-dialog {
+  display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+}
+.el-overlay-dialog > .el-dialog { margin: auto; }
+.el-dialog { max-width: calc(100vw - 32px); padding: 24px; }
+.el-dialog:not(.is-fullscreen) {
+  display: flex; flex-direction: column; max-height: calc(100dvh - 32px); overflow: hidden;
+}
+.el-dialog > .el-dialog__header,
+.el-dialog > .el-dialog__footer { flex-shrink: 0; }
+.el-dialog > .el-dialog__body {
+  min-height: 0; overflow-y: auto; overscroll-behavior-y: contain;
+}
+.el-message-box { max-height: calc(100dvh - 32px); display: inline-flex; flex-direction: column; }
+.el-message-box > .el-message-box__header,
+.el-message-box > .el-message-box__btns { flex-shrink: 0; }
+.el-message-box > .el-message-box__content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+.el-dialog__title, .el-drawer__title { color: var(--epay-heading); font-size: 19px; font-weight: 600; letter-spacing: -.3px; }
+.el-dialog__headerbtn { top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 50%; background: var(--epay-track); }
+.el-dialog__headerbtn .el-dialog__close { color: var(--epay-muted); }
+.el-dialog__header { padding-bottom: 22px; }
+.el-dialog__footer { padding-top: 20px; }
+.el-drawer:not(.epay-mobile-navigation) { max-width: calc(100vw - 24px); height: calc(100% - 24px); margin: 12px; }
+.el-drawer__header { margin-bottom: 0; padding: 25px 26px 22px; border-bottom: 1px solid var(--epay-edge); }
+.el-drawer__body { padding: 24px 26px; }
+.el-drawer__footer { padding: 16px 26px; border-top: 1px solid var(--epay-edge); }
+/* 遮罩负责背景过渡，面板负责位移，避免原生动画与自定义动画叠加。 */
+.el-overlay.el-drawer-fade-enter-active { transition: background-color 360ms ease, backdrop-filter 280ms ease !important; }
+.el-overlay.el-drawer-fade-leave-active { transition: background-color 240ms ease, backdrop-filter 240ms ease !important; }
+.el-drawer:not(.is-dragging) { transition: transform var(--epay-drawer-duration, 360ms) var(--epay-drawer-ease, var(--epay-ease)) !important; }
+.el-drawer-fade-leave-active { --epay-drawer-duration: 240ms; --epay-drawer-ease: cubic-bezier(.4, 0, 1, 1); }
+.el-overlay:is(.el-drawer-fade-enter-from, .el-drawer-fade-leave-to, .dialog-fade-enter-from, .dialog-fade-leave-to) {
+  background-color: transparent !important; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0);
+}
+.el-drawer-fade-enter-active .el-drawer.rtl .el-drawer__body > :not(.el-form),
+.el-drawer-fade-enter-active .el-drawer.rtl .el-drawer__body > .el-form > * {
+  animation: epay-detail-in 260ms var(--epay-ease) both;
+}
+.el-drawer-fade-enter-active .el-drawer.rtl .el-form > :nth-child(n + 3) { animation-delay: 35ms; }
+.el-drawer-fade-enter-active .el-drawer.rtl .el-form > :nth-child(n + 5) { animation-delay: 70ms; }
+.el-drawer-fade-enter-active .el-drawer.rtl .el-form > :nth-child(n + 7) { animation-delay: 90ms; }
+.el-overlay.dialog-fade-enter-active { animation: none !important; transition: background-color 300ms ease, backdrop-filter 240ms ease !important; }
+.el-overlay.dialog-fade-leave-active { animation: none !important; transition: background-color 180ms ease, backdrop-filter 180ms ease !important; }
+:is(.dialog-fade-enter-active, .dialog-fade-leave-active) .el-overlay-dialog { animation: none !important; }
+.dialog-fade-enter-active .el-dialog { transition: translate 300ms var(--epay-spring), scale 300ms var(--epay-spring), opacity 240ms ease; }
+.dialog-fade-leave-active .el-dialog { transition: translate 180ms ease, scale 180ms ease, opacity 180ms ease; }
+:is(.dialog-fade-enter-from, .dialog-fade-leave-to) .el-dialog { opacity: 0; translate: 0 -16px; scale: .975; }
+.el-popper.is-light { border: 1px solid var(--epay-edge); border-radius: 14px; background: var(--epay-glass); box-shadow: var(--epay-float-shadow); backdrop-filter: blur(24px); }
+.el-dropdown-menu { padding: 6px; border-radius: 14px; background: transparent; }
+.el-dropdown-menu__item { border-radius: 9px; }
+.el-message {
+  --el-message-close-icon-color: var(--el-message-text-color, var(--epay-muted));
+  border: 1px solid color-mix(in srgb, var(--el-message-text-color, var(--epay-muted)) 24%, var(--epay-surface));
+  border-radius: 100px; color: var(--el-message-text-color, var(--epay-text)); background: var(--epay-glass);
+  box-shadow: var(--epay-float-shadow); backdrop-filter: blur(24px);
+}
+.el-message .el-message__content { color: var(--el-message-text-color, var(--epay-text)); line-height: 1.5; }
+.el-message.epay-message-stopped { --el-message-text-color: var(--epay-danger); }
+.el-notification {
+  border: 1px solid var(--epay-edge); border-radius: 16px; color: var(--epay-text); background: var(--epay-glass);
+  box-shadow: var(--epay-float-shadow); backdrop-filter: blur(24px);
+}
+.epay-mobile-navigation { background: var(--epay-nav-top); }
+.epay-mobile-navigation .el-drawer__body { padding: 0; }
+.epay-page-enter-active { transition: opacity 280ms ease, transform 380ms var(--epay-ease); }
+.epay-page-leave-active { transition: opacity 120ms ease, transform 160ms ease; }
+.epay-page-enter-from { opacity: 0; transform: translateY(12px); }
+.epay-page-leave-to { opacity: 0; transform: translateY(-4px); }
+/* 子动画的时长与延迟总和须短于父级 380ms，避免过渡结束时被截断。 */
+.epay-page-enter-active .epay-overview-middle > .epay-panel { animation: epay-rise 260ms var(--epay-ease) both; }
+/* 卡片只在挂载时错峰入场；数值以展示内容为 key，仅变化时播放一次。 */
+.epay-stat-card[class] {
+  animation: epay-stat-enter 380ms var(--epay-ease) backwards;
+  transition: translate 180ms var(--epay-ease), box-shadow 180ms ease, border-color 180ms ease;
+}
+.epay-stat-card:nth-child(2) { animation-delay: 45ms; }
+.epay-stat-card:nth-child(3) { animation-delay: 90ms; }
+.epay-stat-card:nth-child(4) { animation-delay: 135ms; }
+.epay-stat-icon { transition: transform 180ms var(--epay-ease); }
+.epay-stat-value, .epay-stat-number .el-statistic__value {
+  display: inline-block;
+  animation: epay-stat-value-in 320ms var(--epay-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  html:not([data-motion='reduced']) .epay-stat-card:hover {
+    translate: 0 -3px;
+    border-color: color-mix(in srgb, var(--epay-blue) 32%, var(--epay-edge));
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--epay-blue) 10%, transparent);
+  }
+  html:not([data-motion='reduced']) .epay-stat-card:hover .epay-stat-icon {
+    transform: translateY(-1px) rotate(-5deg);
+  }
+}
+@keyframes epay-stat-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes epay-stat-value-in {
+  from { opacity: .55; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.epay-page-enter-active .epay-overview-middle > .epay-panel { animation-delay: 100ms; }
+@keyframes epay-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes epay-detail-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+@media (max-width: 640px) {
+  .epay-layout .el-card { --el-card-padding: 16px; border-radius: 16px; }
+  .epay-layout .el-card > .el-card__header { padding: 18px 16px 14px; }
+  .epay-layout .el-card__header > .flex { align-items: flex-start; }
+  .epay-layout .el-card__header > .flex > .flex { flex-wrap: wrap; }
+  .el-dialog { padding: 18px; border-radius: 20px; }
+  .el-drawer:not(.epay-mobile-navigation) { max-width: calc(100vw - 16px); margin: 8px; height: calc(100% - 16px); border-radius: 20px; }
+  .el-drawer__header, .el-drawer__body, .el-drawer__footer { padding-inline: 18px; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .epay-header, .el-dialog, .el-drawer:not(.epay-mobile-navigation), .el-message-box, .el-popper.is-light, .el-message, .el-notification { background: var(--epay-surface); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .epay-header, .el-dialog, .el-drawer:not(.epay-mobile-navigation), .el-message-box, .el-popper.is-light, .el-message, .el-notification { background: var(--epay-surface) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .el-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+:is(.epay-layout, .el-overlay) .el-input-number { min-width: 140px; }
+:is(.epay-layout, .el-overlay) .el-input-number .el-input__wrapper { padding-inline: 38px; }
+:is(.epay-layout, .el-overlay) .el-input-number.is-controls-right .el-input__wrapper { padding-left: 12px; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 2) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 2) > .el-sub-menu__title > .el-icon { color: #b9dcff; background: #294563; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 5) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 5) > .el-sub-menu__title > .el-icon { color: #cec7ff; background: #3c3958; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 6) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 6) > .el-sub-menu__title > .el-icon { color: #a4d9e9; background: #2b4653; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 7) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 7) > .el-sub-menu__title > .el-icon { color: #efc0a8; background: #514039; }
+.epay-layout :is(.text-danger, .text-error) { color: var(--epay-danger); }
+.epay-layout .text-warning { color: var(--epay-warning); }
+.epay-layout .text-success { color: var(--epay-success); }
+.epay-layout .el-card__header :is(.el-input, .el-select, .list-toolbar p) { font-weight: 400; }
+/* 自定义树操作与原生按钮保持相同反馈，菜单禁用项不响应悬停。 */
+:is(.epay-layout, .el-overlay) :is(.node-more, .tree-more) {
+  min-width: 28px; min-height: 28px; border-radius: 8px;
+  transition: color 180ms, background-color 180ms, scale 120ms;
+}
+:is(.epay-layout, .el-overlay) .epay-nav-toggle .el-button { width: 44px; height: 44px; min-height: 44px; }
+:is(.epay-layout, .el-overlay) :is(.node-more, .tree-more):not(:disabled):active,
+.epay-task:not(:disabled):active { scale: .97; }
+.tree-context-menu button { transition: color 180ms, background-color 180ms; touch-action: manipulation; }
+.tree-context-menu button:disabled:hover { background: transparent; }
+.tree-context-menu :focus-visible { outline: 2px solid var(--epay-blue); outline-offset: -2px; }
+.epay-nav-toggle .el-button { --epay-button-ink: var(--epay-nav-muted); }
+.epay-nav-toggle .el-button:not(:disabled):not(.is-disabled):not(.is-loading):hover { color: var(--epay-nav-text); background: var(--epay-nav-hover); }
+@media (pointer: coarse) {
+  :is(.epay-layout, .el-overlay, .el-popper, .el-message-box) .el-table :is(.el-input__wrapper, .el-select__wrapper, .el-switch, .el-checkbox) { min-height: 44px; }
+  :is(.epay-layout, .el-overlay, .el-popper) button[class],
+  :is(.epay-layout, .el-overlay, .el-popper) :is(.el-pagination .btn-prev, .el-pagination .btn-next, .el-pagination .el-pager li) {
+    min-height: 44px !important; min-width: 44px !important;
+  }
+  :is(.epay-layout, .el-overlay) :is(.node-more, .tree-more) { min-width: 44px; min-height: 44px; }
+}
+html[data-motion='reduced'] :is(.el-button, .epay-task, .node-more, .tree-more) {
+  translate: none !important; scale: none !important;
+}
+
+:is(.epay-layout, .el-overlay) .epay-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+:is(.epay-layout, .el-overlay) .epay-search-actions > .el-button + .el-button {
+  margin-left: 0;
+}
+
+:is(.epay-layout, .el-overlay) .epay-search-toggle {
+  min-height: 32px;
+}
+
+:is(.epay-layout, .el-overlay) .epay-search-advanced {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 20px;
+  min-width: 0;
+  padding-top: 4px;
+}

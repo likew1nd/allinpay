@@ -1,0 +1,1271 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+model SysTokens {
+  id           String   @id @default(cuid())
+  accessToken  String   @unique @map("access_token") @db.VarChar(2048)
+  refreshToken String   @unique @map("refresh_token") @db.VarChar(2048)
+  status       String
+  userId       String   @map("user_id")
+  username     String
+  domain       String
+  loginTime    DateTime @default(now()) @map("login_time")
+  ip           String
+  port         Int?
+  address      String
+  userAgent    String   @map("user_agent")
+  requestId    String   @map("request_id")
+  type         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String   @map("created_by")
+
+  @@map("sys_tokens")
+}
+
+// 用户表
+model SysUser {
+  id          String    @id
+  username    String    @unique
+  password    String
+  domain      String
+  built_in    Boolean   @default(false)
+  avatar      String?
+  email       String?   @unique
+  phoneNumber String?   @unique @map("phone_number")
+  nickName    String    @map("nick_name")
+  status      Status
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("sys_user")
+}
+
+enum Status {
+  ENABLED
+  DISABLED
+  BANNED
+}
+
+// casbin_rule
+model CasbinRule {
+  id    Int     @id @default(autoincrement())
+  ptype String
+  v0    String?
+  v1    String?
+  v2    String?
+  v3    String?
+  v4    String?
+  v5    String?
+
+  @@map("casbin_rule")
+}
+
+// domain 租户/域
+model SysDomain {
+  id          String    @id
+  code        String    @unique
+  name        String
+  description String?
+  status      Status
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("sys_domain")
+}
+
+// 角色表
+model SysRole {
+  id          String    @id
+  code        String    @unique
+  name        String
+  description String?
+  pid         String    @default("0")
+  status      Status
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("sys_role")
+}
+
+model SysUserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  @@id([userId, roleId])
+  @@map("sys_user_role")
+}
+
+// 接口资源表
+model SysEndpoint {
+  id         String    @id
+  path       String
+  method     String
+  action     String
+  resource   String
+  controller String
+  summary    String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime? @updatedAt @map("updated_at")
+
+  @@map("sys_endpoint")
+}
+
+// 组织机构
+model SysOrganization {
+  id          String    @id
+  code        String    @unique
+  name        String
+  description String?
+  pid         String    @default("0")
+  status      Status
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("sys_organization")
+}
+
+model SysLoginLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  username  String
+  domain    String
+  loginTime DateTime @default(now()) @map("login_time")
+  ip        String
+  port      Int?
+  address   String
+  userAgent String   @map("user_agent")
+  requestId String   @map("request_id")
+  type      String
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  @@map("sys_login_log")
+}
+
+model SysOperationLog {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  username    String
+  domain      String
+  moduleName  String   @map("module_name")
+  description String
+  requestId   String   @map("request_id")
+  method      String
+  url         String
+  ip          String
+  userAgent   String?  @map("user_agent")
+  params      Json?    @map("params")
+  body        Json?    @map("body")
+  response    Json?    @map("response")
+  startTime   DateTime @map("start_time")
+  endTime     DateTime @map("end_time")
+  duration    Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  source     String  @default("USER")
+  level      String  @default("INFO")
+  status     String  @default("UNKNOWN")
+  objectId   String? @map("object_id")
+  objectName String? @map("object_name") @db.VarChar(500)
+  relatedId  String? @map("related_id")
+
+  @@index([domain, endTime, id])
+  @@index([domain, source, level, endTime])
+  @@map("sys_operation_log")
+}
+
+enum MenuType {
+  directory
+  menu
+}
+
+model SysMenu {
+  id        Int      @id @default(autoincrement())
+  menuType  MenuType @map("menu_type")
+  menuName  String   @map("menu_name") @db.VarChar(64)
+  iconType  Int?     @default(1) @map("icon_type")
+  icon      String?  @map("icon") @db.VarChar(64)
+  routeName String   @unique @map("route_name") @db.VarChar(64)
+  routePath String   @map("route_path") @db.VarChar(128)
+  component String   @map("component") @db.VarChar(64)
+  pathParam String?  @map("path_param") @db.VarChar(64)
+  status    Status
+
+  activeMenu String?  @map("active_menu") @db.VarChar(64)
+  hideInMenu Boolean? @default(false) @map("hide_in_menu")
+  pid        Int      @default(0)
+  order      Int      @map("sequence")
+  i18nKey    String?  @map("i18n_key") @db.VarChar(64)
+  keepAlive  Boolean? @default(false) @map("keep_alive")
+  constant   Boolean  @default(false)
+  href       String?  @map("href") @db.VarChar(64)
+  multiTab   Boolean? @default(false) @map("multi_tab")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  createdBy String    @map("created_by")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  updatedBy String?   @map("updated_by")
+
+  @@map("sys_menu")
+}
+
+model SysRoleMenu {
+  roleId String @map("role_id")
+  menuId Int    @map("menu_id")
+  domain String
+
+  @@id([roleId, menuId, domain])
+  @@map("sys_role_menu")
+}
+
+model SysAccessKey {
+  id              String   @id @default(cuid())
+  domain          String
+  AccessKeyID     String   @unique @map("access_key_id")
+  AccessKeySecret String   @unique @map("access_key_secret")
+  status          Status
+  description     String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdBy       String   @map("created_by")
+
+  @@map("sys_access_key")
+}
+
+enum SiteConnectionStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+enum SiteStructureStatus {
+  UNKNOWN
+  COMPATIBLE
+  INCOMPATIBLE
+}
+
+enum SiteChannelStatus {
+  ENABLED
+  DISABLED
+  UNKNOWN
+}
+
+enum SiteOrderStatus {
+  SUCCESS
+  FAILED
+  PROCESSING
+  EXCLUDED
+}
+
+enum StrategyStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  ERROR
+}
+
+enum CollectorStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+enum AccountStatus {
+  HEALTHY
+  DEGRADED
+  AUTH_EXPIRED
+  PASSWORD_REJECTED
+  CAPTCHA_REQUIRED
+  ENV_UNAVAILABLE
+  UNKNOWN
+}
+
+enum AccountBusinessStatus {
+  NORMAL
+  RESTRICTED
+  JUDICIAL
+  UNKNOWN
+}
+
+model EpaySite {
+  id                    String                 @id
+  name                  String
+  baseUrl               String                 @map("base_url")
+  tablePrefix           String?                @map("table_prefix")
+  timezone              String                 @default("Asia/Shanghai")
+  dbHost                String                 @map("db_host")
+  dbPort                Int                    @default(3306) @map("db_port")
+  dbName                String                 @map("db_name")
+  dbUser                String                 @map("db_user")
+  credentialRef         String                 @map("credential_ref")
+  dbPasswordEncrypted   String?                @map("db_password_encrypted")
+  agentTokenEncrypted   String?                @map("agent_token_encrypted")
+  connectionStatus      SiteConnectionStatus   @default(PENDING) @map("connection_status")
+  structureStatus       SiteStructureStatus    @default(UNKNOWN) @map("structure_status")
+  structureReport       Json?                  @map("structure_report")
+  adapterVersion        String?                @map("adapter_version")
+  agentVersion          String?                @map("agent_version")
+  lastHeartbeatAt       DateTime?              @map("last_heartbeat_at")
+  syncRevision          Int                    @default(1) @map("sync_revision")
+  nextConnectionAt      DateTime               @default(now()) @map("next_connection_at")
+  connectionLeaseUntil  DateTime?              @map("connection_lease_until")
+  connectionLeaseOwner  String?                @map("connection_lease_owner")
+  activeSyncId          String?                @map("active_sync_id")
+  syncRuns              EpaySyncRun[]
+  lastSyncAt            DateTime?              @map("last_sync_at")
+  automationPaused      Boolean                @default(false) @map("automation_paused")
+  lastError             String?                @map("last_error")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  createdBy             String                 @map("created_by")
+  updatedAt             DateTime?              @updatedAt @map("updated_at")
+  updatedBy             String?                @map("updated_by")
+  channels              EpayChannel[]
+  pollingGroups         EpayPollingGroup[]
+  orders                EpayOrder[]
+  metrics               EpaySiteMetric[]
+  strategyGroups        StrategyGroup[]
+  adjustmentRecords     AdjustmentRecord[]
+  accountBindings       AccountBinding[]
+  strategyGroupBindings StrategyGroupBinding[]
+  strategyTargets       StrategyTarget[]
+  manualTakeovers       ManualTakeover[]
+
+  @@index([connectionStatus])
+  @@index([nextConnectionAt, connectionLeaseUntil])
+  @@map("epay_site")
+}
+
+model Collector {
+  apiEndpoint              String?                  @map("api_endpoint") @db.VarChar(300)
+  apiKeyEncrypted          String?                  @map("api_key_encrypted") @db.Text
+  nextSyncAt               DateTime                 @default(now()) @map("next_sync_at")
+  syncLeaseUntil           DateTime?                @map("sync_lease_until")
+  syncLeaseOwner           String?                  @map("sync_lease_owner")
+  configRevision           Int                      @default(1) @map("config_revision")
+  scriptNextAt             DateTime                 @default(now()) @map("script_next_at")
+  scriptLeaseUntil         DateTime?                @map("script_lease_until")
+  scriptLeaseOwner         String?                  @map("script_lease_owner")
+  id                       String                   @id
+  name                     String
+  tokenEncrypted           String?                  @map("token_encrypted")
+  status                   CollectorStatus          @default(OFFLINE)
+  version                  String?
+  lastHeartbeatAt          DateTime?                @map("last_heartbeat_at")
+  lastError                String?                  @map("last_error")
+  metadata                 Json?
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime?                @updatedAt @map("updated_at")
+  accounts                 Account[]
+  agentSessionId           String?                  @map("agent_session_id") @db.VarChar(64)
+  agentSessionStartedAt    DateTime?                @map("agent_session_started_at")
+  appliedRevision          Int                      @default(0) @map("applied_revision")
+  adsPowerStatus           String                   @default("UNKNOWN") @map("ads_power_status") @db.VarChar(20)
+  adsPowerCheckedAt        DateTime?                @map("ads_power_checked_at")
+  environmentSyncedAt      DateTime?                @map("environment_synced_at")
+  environmentSyncError     String?                  @map("environment_sync_error") @db.VarChar(500)
+  monitoringEnabled        Boolean                  @default(true) @map("monitoring_enabled")
+  inventorySyncId         String?                  @map("inventory_sync_id") @db.VarChar(64)
+  inventoryLastCompletedId String?                  @map("inventory_last_completed_id") @db.VarChar(64)
+  commands                 CollectorCommand[]
+  inventoryPages           CollectorInventoryPage[]
+
+  @@index([status, lastHeartbeatAt])
+  @@map("collector")
+}
+
+// AdsPower 页面巡检的全局配置。账号/环境归属仍在 Collector/Account，
+// 保存共同脚本参数与加密的平台密码，不保存 Cookie 或页面全文。
+model ScriptSetting {
+  id                       String   @id
+  enabled                  Boolean  @default(false)
+  tab1Url                  String   @map("tab1_url") @db.VarChar(500)
+  tab2Url                  String   @map("tab2_url") @db.VarChar(500)
+  tab3Url                  String   @default("https://open.alipay.com/develop/manage") @map("tab3_url") @db.VarChar(500)
+  minRefreshSeconds        Int      @default(45) @map("min_refresh_seconds")
+  maxRefreshSeconds        Int      @default(90) @map("max_refresh_seconds")
+  navigationTimeoutSeconds Int      @default(30) @map("navigation_timeout_seconds")
+  maxConcurrentAccounts    Int      @default(4) @map("max_concurrent_accounts")
+  retryCount               Int      @default(2) @map("retry_count")
+  actionTimeoutSeconds     Int      @default(15) @map("action_timeout_seconds")
+  loginCooldownMinutes     Int      @default(10) @map("login_cooldown_minutes")
+  loginMaxAttempts         Int      @default(3) @map("login_max_attempts")
+  loginTimeoutMinutes      Int      @default(3) @map("login_timeout_minutes")
+  // 环境同步间隔（分钟）：采集端按此周期把 AdsPower 环境清单同步到中心；手动“同步环境”不受影响
+  environmentSyncMinutes   Int      @default(30) @map("environment_sync_minutes")
+  // 余额新鲜阈值（分钟）：转账只使用此时间内采集到的余额，超过则先刷新余额；默认 10
+  balanceFreshMinutes      Int      @default(10) @map("balance_fresh_minutes")
+  // 扫码确认：二维码发出后最多等待的分钟数，超时本笔转账按失败结束
+  qrWaitMinutes            Int      @default(8) @map("qr_wait_minutes")
+  // 滑块识别坐标的固定补偿像素；负值表示回退。默认 +10，修正"少滑一点"的偏差。
+  sliderOffsetPx              Int      @default(10) @map("slider_offset_px")
+  captchaProvider             String   @default("NONE") @map("captcha_provider") @db.VarChar(32)
+  // 图鉴打码平台凭据
+  ttshituUsername             String   @default("") @map("ttshitu_username") @db.VarChar(191)
+  ttshituPasswordEncrypted    String?  @map("ttshitu_password_encrypted") @db.Text
+  // 滨图打码平台凭据
+  bingtopUsername             String   @default("") @map("bingtop_username") @db.VarChar(191)
+  bingtopPasswordEncrypted    String?  @map("bingtop_password_encrypted") @db.Text
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+  updatedBy                   String?  @map("updated_by") @db.VarChar(191)
+
+  @@map("script_setting")
+}
+
+model Account {
+  // 列表归属与执行开关独立，暂停转账不移出列表。
+  transferListed Boolean @default(false) @map("transfer_listed")
+  transferEnabled Boolean @default(false) @map("transfer_enabled")
+  transferRuleId String? @map("transfer_rule_id")
+  transferRule TransferRule? @relation(fields: [transferRuleId], references: [id], onDelete: SetNull)
+  transfers TransferRequest[]
+  transferRefreshRequired Boolean @default(false) @map("transfer_refresh_required")
+  profileNo             String?               @map("profile_no")
+  groupName             String?               @map("group_name")
+  profilePresent        Boolean               @default(true) @map("profile_present")
+  businessStatus        AccountBusinessStatus @default(UNKNOWN) @map("business_status")
+  receiptLimit          Decimal?              @map("receipt_limit") @db.Decimal(20, 2)
+  paymentLimit          Decimal?              @map("payment_limit") @db.Decimal(20, 2)
+  unavailableBalance    Decimal?              @map("unavailable_balance") @db.Decimal(20, 2)
+  pendingBalance        Decimal?              @map("pending_balance") @db.Decimal(20, 2)
+  // 登录后巡检截图（JPEG data URL）：命中限制/司法时保存，解除后清空；列表接口不返回图片本身，只返回采集时间
+  restrictionImage      String?               @map("restriction_image") @db.MediumText
+  restrictionImageAt    DateTime?             @map("restriction_image_at")
+  judicialImage         String?               @map("judicial_image") @db.MediumText
+  judicialImageAt       DateTime?             @map("judicial_image_at")
+  // 登录后巡检得到的限制标记：两项可同时为真；businessStatus 是兼容用的单值（司法优先）
+  restrictionActive     Boolean               @default(false) @map("restriction_active")
+  judicialActive        Boolean               @default(false) @map("judicial_active")
+  // 页面上收款/付款额度显示为“不限额”时为 true，此时对应的额度数值字段无意义
+  receiptUnlimited      Boolean               @default(false) @map("receipt_unlimited")
+  paymentUnlimited      Boolean               @default(false) @map("payment_unlimited")
+  id                    String                @id
+  collectorId           String?               @map("collector_id")
+  externalId            String                @map("external_id")
+  name                  String?
+  status                AccountStatus         @default(UNKNOWN)
+  browserState          String?               @map("browser_state")
+  lastSeenAt            DateTime?             @map("last_seen_at")
+  lastError             String?               @map("last_error")
+  scriptNextAt          DateTime              @default(now()) @map("script_next_at")
+  scriptLeaseUntil      DateTime?             @map("script_lease_until")
+  scriptLeaseOwner      String?               @map("script_lease_owner")
+  // 是否启用监控：默认关闭，新增采集端同步进来的环境不自动监控，需手动或批量开启
+  monitoringEnabled     Boolean               @default(false) @map("monitoring_enabled")
+  appIdsRefreshRequestedAt DateTime?           @map("app_ids_refresh_requested_at")
+  monitoringLogs        Json?                 @map("monitoring_logs")
+  monitoringTabBindings Json?                 @map("monitoring_tab_bindings")
+  metadata              Json?
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime?             @updatedAt @map("updated_at")
+  collector             Collector?            @relation(fields: [collectorId], references: [id], onDelete: SetNull)
+  bindings              AccountBinding[]
+  fundAccount           FundAccount?
+  credentials           AccountCredentials?
+  // 页面采集到的余额，由采集端心跳上报；超过 5 分钟没更新就不用于触发转账
+  balance               Decimal?              @db.Decimal(20, 2)
+  balanceAt             DateTime?             @map("balance_at")
+
+  @@unique([collectorId, externalId])
+  @@index([status, lastSeenAt])
+  @@map("account")
+}
+
+model AccountCredentials {
+  accountId           String    @id @map("account_id")
+  loginAccount        String    @default("") @map("login_account") @db.VarChar(191)
+  appId               String    @default("") @map("app_id") @db.VarChar(191)
+  appIds              Json?     @map("app_ids")
+  passwordEncrypted   String?   @map("password_encrypted") @db.Text
+  paymentPasswordEncrypted String? @map("payment_password_encrypted") @db.Text
+  loginAttemptAfter   DateTime? @map("login_attempt_after")
+  loginAttempts       Int       @default(0) @map("login_attempts")
+  loginBlocked        Boolean   @default(false) @map("login_blocked")
+  captchaImageHash    String?   @map("captcha_image_hash") @db.VarChar(64)
+  captchaAttemptAfter DateTime? @map("captcha_attempt_after")
+  account             Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("account_credentials")
+}
+
+model AccountBinding {
+  id          String    @id
+  accountId   String    @map("account_id")
+  siteId      String    @map("site_id")
+  channelCode String    @map("channel_code")
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  site        EpaySite  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, siteId, channelCode])
+  @@index([siteId, channelCode, enabled])
+  @@map("account_binding")
+}
+
+model FundAccount {
+  id               String             @id
+  name             String
+  owner            String
+  balance          Decimal            @default(0) @db.Decimal(20, 2)
+  frozen           Decimal            @default(0) @db.Decimal(20, 2)
+  status           String             @default("ACTIVE")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  settlements      SettlementRecord[]
+  // 由哪个采集端账号付款并上报余额，可空
+  accountId        String?            @unique @map("account_id")
+  account          Account?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  transferRules    TransferRule[]
+  transferRequests TransferRequest[]
+
+  @@map("fund_account")
+}
+
+
+model SettlementRecord {
+  id            String      @id
+  fundAccountId String      @map("fund_account_id")
+  periodStart   DateTime    @map("period_start")
+  periodEnd     DateTime    @map("period_end")
+  amount        Decimal     @db.Decimal(20, 2)
+  fee           Decimal     @default(0) @db.Decimal(20, 2)
+  status        String      @default("PENDING")
+  note          String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  fundAccount   FundAccount @relation(fields: [fundAccountId], references: [id], onDelete: Restrict)
+
+  @@index([status, periodEnd])
+  @@map("settlement_record")
+}
+
+model EpayChannel {
+  details        Json?
+  id             String              @id
+  siteId         String              @map("site_id")
+  code           String
+  name           String
+  channelType    String?             @map("channel_type")
+  status         SiteChannelStatus   @default(UNKNOWN)
+  plugin         String?
+  paymentTypeId  String?             @map("payment_type_id")
+  sourceStatus   Int                 @default(0) @map("source_status")
+  dayStatus      Int                 @default(0) @map("day_status")
+  currentWeight  Int                 @default(0) @map("current_weight")
+  sourceVersion  String?             @map("source_version")
+  updatedAt      DateTime?           @updatedAt @map("updated_at")
+  site           EpaySite            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  pollingMembers EpayPollingMember[]
+
+  @@unique([siteId, code])
+  @@index([siteId, status])
+  @@map("epay_channel")
+}
+
+model EpayPollingGroup {
+  kind            Int                 @default(0)
+  position        Int                 @default(0)
+  paymentTypeId   String?             @map("payment_type_id")
+  paymentTypeName String?             @map("payment_type_name")
+  updatedAt       DateTime?           @map("updated_at")
+  id              String              @id
+  siteId          String              @map("site_id")
+  code            String
+  name            String
+  status          SiteChannelStatus   @default(UNKNOWN)
+  sourceVersion   String?             @map("source_version")
+  site            EpaySite            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  members         EpayPollingMember[]
+
+  @@unique([siteId, code])
+  @@map("epay_polling_group")
+}
+
+model EpayPollingMember {
+  groupId      String           @map("group_id")
+  channelId    String           @map("channel_id")
+  position     Int              @default(0)
+  weight       Int              @default(0)
+  enabled      Boolean          @default(true)
+  pollingGroup EpayPollingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  channel      EpayChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, channelId])
+  @@map("epay_polling_member")
+}
+
+model EpayOrder {
+  syncRunId       String?         @map("sync_run_id")
+  syncRun         EpaySyncRun?    @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  merchantId      String?         @map("merchant_id")
+  paymentTypeId   String?         @map("payment_type_id")
+  paymentTypeName String?         @map("payment_type_name")
+  subchannelCode  String?         @map("subchannel_code")
+  realAmount      Decimal?        @map("real_amount") @db.Decimal(18, 2)
+  id              String          @id
+  siteId          String          @map("site_id")
+  externalId      String          @map("external_id")
+  channelCode     String?         @map("channel_code")
+  amount          Decimal         @db.Decimal(18, 2)
+  sourceStatus    String          @map("source_status")
+  status          SiteOrderStatus
+  paidAt          DateTime?       @map("paid_at")
+  occurredAt      DateTime        @map("occurred_at")
+  sourceVersion   String?         @map("source_version")
+  site            EpaySite        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([syncRunId, externalId])
+  @@index([siteId, syncRunId, occurredAt])
+  @@index([siteId, status, occurredAt])
+  @@map("epay_order")
+}
+
+model EpaySiteMetric {
+  id             String   @id
+  siteId         String   @map("site_id")
+  windowStart    DateTime @map("window_start")
+  windowEnd      DateTime @map("window_end")
+  orderCount     Int      @map("order_count")
+  successCount   Int      @map("success_count")
+  failedCount    Int      @map("failed_count")
+  successRate    Decimal  @map("success_rate") @db.Decimal(7, 4)
+  failureRate    Decimal  @map("failure_rate") @db.Decimal(7, 4)
+  calculatedAt   DateTime @default(now()) @map("calculated_at")
+  mappingVersion String   @map("mapping_version")
+  site           EpaySite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, windowEnd])
+  @@map("epay_site_metric")
+}
+
+model StrategyGroup {
+  id              String                 @id
+  templateId      String?                @map("template_id")
+  template        StrategyTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  configuration   Json?
+  reserveChannels Json?                  @map("reserve_channels")
+  targets         StrategyTarget[]
+  siteId          String?                @map("site_id")
+  name            String
+  description     String?                @db.VarChar(500)
+  executionOrder  Int                    @default(0) @map("execution_order")
+  status          StrategyStatus         @default(DRAFT)
+  currentVersion  Int                    @default(1) @map("current_version")
+  lastRunAt       DateTime?              @map("last_run_at")
+  site            EpaySite?              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  strategies      Strategy[]
+  bindings        StrategyGroupBinding[]
+
+  @@index([siteId, status])
+  @@map("strategy_group")
+}
+
+model StrategyTemplate {
+  id              String          @id
+  name            String          @unique
+  description     String?         @db.VarChar(500)
+  controlType     String          @map("control_type")
+  windowMinutes   Int             @default(10) @map("window_minutes")
+  minSamples      Int             @default(1) @map("min_samples")
+  cooldownSeconds Int             @default(300) @map("cooldown_seconds")
+  minWeight       Int             @default(1) @map("min_weight")
+  maxWeight       Int             @default(100) @map("max_weight")
+  rules           Json
+  version         Int             @default(1)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  groups          StrategyGroup[]
+
+  @@map("strategy_template")
+}
+
+model StrategyTarget {
+  id               String        @id
+  groupId          String        @map("group_id")
+  siteId           String        @map("site_id")
+  controlType      String        @map("control_type")
+  isClaim          Boolean       @default(false) @map("is_claim")
+  pollingGroupCode String        @default("") @map("polling_group_code")
+  channelCode      String        @map("channel_code")
+  lastTriggeredAt  DateTime?     @map("last_triggered_at")
+  lastEvaluatedAt  DateTime?     @map("last_evaluated_at")
+  lastReason       String?       @map("last_reason")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  group            StrategyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  site             EpaySite      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, controlType, pollingGroupCode, channelCode], map: "strategy_target_owner_key")
+  @@index([groupId])
+  @@map("strategy_target")
+}
+
+model StrategyGroupBinding {
+  id               String        @id
+  groupId          String        @map("group_id")
+  siteId           String        @map("site_id")
+  pollingGroupCode String        @map("polling_group_code")
+  enabled          Boolean       @default(true)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  group            StrategyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  site             EpaySite      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, siteId, pollingGroupCode])
+  @@index([siteId, pollingGroupCode, enabled])
+  @@map("strategy_group_binding")
+}
+
+model Strategy {
+  id              String            @id
+  groupId         String            @map("group_id")
+  name            String
+  condition       Json
+  scope           Json
+  action          Json
+  schedule        String?
+  priority        Int               @default(0)
+  version         Int               @default(1)
+  effectiveFrom   DateTime?         @map("effective_from")
+  effectiveTo     DateTime?         @map("effective_to")
+  status          StrategyStatus    @default(DRAFT)
+  lastTriggeredAt DateTime?         @map("last_triggered_at")
+  group           StrategyGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  versions        StrategyVersion[]
+
+  @@index([groupId, status, priority])
+  @@map("strategy")
+}
+
+model StrategyVersion {
+  id            String    @id
+  strategyId    String    @map("strategy_id")
+  version       Int
+  name          String
+  condition     Json
+  scope         Json
+  action        Json
+  schedule      String?
+  priority      Int
+  effectiveFrom DateTime? @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  strategy      Strategy  @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@unique([strategyId, version])
+  @@index([strategyId, createdAt])
+  @@map("strategy_version")
+}
+
+model AdjustmentRecord {
+  id              String    @id
+  strategyGroupId String?   @map("strategy_group_id")
+  bindingId       String?   @map("binding_id")
+  groupVersion    Int?      @map("group_version")
+  ruleName        String?   @map("rule_name") @db.Text
+  siteId          String    @map("site_id")
+  strategyId      String?   @map("strategy_id")
+  action          String
+  target          Json
+  beforeState     Json?     @map("before_state")
+  desiredState    Json?     @map("desired_state")
+  actualState     Json?     @map("actual_state")
+  status          String
+  failureReason   String?   @map("failure_reason")
+  strategyVersion Int?      @map("strategy_version")
+  targetVersion   String?   @map("target_version")
+  expiresAt       DateTime? @map("expires_at")
+  idempotencyKey  String    @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+  site            EpaySite  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
+  @@index([siteId, status, createdAt])
+  @@map("adjustment_record")
+}
+
+model EpaySyncRun {
+  id             String      @id
+  siteId         String      @map("site_id")
+  site           EpaySite    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  revision       Int
+  status         String      @default("RUNNING")
+  windowStart    DateTime    @map("window_start")
+  windowEnd      DateTime    @map("window_end")
+  mappingVersion String      @map("mapping_version")
+  metadata       Json
+  pages          Json        @default("[]")
+  orderCount     Int         @default(0) @map("order_count")
+  expectedCount  Int         @map("expected_count")
+  error          String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+  completedAt    DateTime?   @map("completed_at")
+  orders         EpayOrder[]
+
+  @@index([siteId, createdAt])
+  @@map("epay_sync_run")
+}
+
+// 已停用功能的历史记录：仅保留数据结构兼容，不再参与策略评估或指令下发
+model ManualTakeover {
+  id               String    @id
+  siteId           String    @map("site_id")
+  scopeType        String    @map("scope_type")
+  pollingGroupCode String    @default("") @map("polling_group_code")
+  channelCode      String    @default("") @map("channel_code")
+  reason           String    @db.VarChar(500)
+  status           String    @default("ACTIVE")
+  createdBy        String    @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  releasedBy       String?   @map("released_by")
+  releasedAt       DateTime? @map("released_at")
+  site             EpaySite  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, status, expiresAt])
+  @@map("manual_takeover")
+}
+
+// 系统设置：键值开关，值存字符串（mfa.enabled 等），默认都是关
+model SystemSetting {
+  key       String   @id @map("setting_key")
+  value     String   @map("setting_value")
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_setting")
+}
+
+// 用户验证器：TOTP 密钥加密存放，验证通过后才生效；lastUsedStep 防止同一个验证码重复使用
+model UserTotp {
+  id              String    @id
+  userId          String    @unique @map("user_id")
+  secretEncrypted String    @map("secret_encrypted")
+  verified        Boolean   @default(false)
+  lastUsedStep    Int?      @map("last_used_step")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  verifiedAt      DateTime? @map("verified_at")
+
+  @@map("user_totp")
+}
+
+// 收款人白名单：转账只能转给这里登记的收款人，请求里不能直接传任意收款账号
+model TransferPool {
+  id String @id
+  name String
+  enabled Boolean @default(true)
+  payees Payee[]
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("transfer_pool")
+}
+
+model Payee {
+  poolId String? @map("pool_id")
+  pool TransferPool? @relation(fields: [poolId], references: [id], onDelete: Restrict)
+  dailyLimit Decimal? @map("daily_limit") @db.Decimal(20, 2)
+  totalLimit Decimal? @map("total_limit") @db.Decimal(20, 2)
+  id               String            @id
+  name             String
+  accountEncrypted String            @map("account_encrypted") @db.Text
+  accountMasked    String            @map("account_masked")
+  status           String            @default("ACTIVE")
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  rules            TransferRule[]
+  requests         TransferRequest[]
+
+  @@index([status])
+  @@map("payee")
+}
+
+// 转账规则通过 enabled 开关控制；mode 仅兼容历史存储，新规则固定 AUTO。
+model TransferRule {
+  description String @default("") @db.VarChar(500)
+  rules Json?
+  allocations Json?
+  isTemplate Boolean @default(false) @map("is_template")
+  accounts Account[]
+  id             String            @id
+  name           String
+  fundAccountId  String?           @map("fund_account_id")
+  payeeId        String?           @map("payee_id")
+  mode           String            @default("AUTO")
+  triggerBalance Decimal           @map("trigger_balance") @db.Decimal(20, 2)
+  reserveAmount  Decimal           @default(0) @map("reserve_amount") @db.Decimal(20, 2)
+  feeBuffer      Decimal           @default(0) @map("fee_buffer") @db.Decimal(20, 2)
+  minAmount      Decimal           @default(0) @map("min_amount") @db.Decimal(20, 2)
+  maxAmount      Decimal           @map("max_amount") @db.Decimal(20, 2)
+  dailyLimit     Decimal?          @map("daily_limit") @db.Decimal(20, 2)
+  enabled        Boolean           @default(false)
+  version        Int               @default(1)
+  createdBy      String            @map("created_by")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedBy      String?           @map("updated_by")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  // 软删除：转账单对策略有外键保护，历史转账记录要继续显示策略名，所以只打删除时间，不真删行
+  deletedAt      DateTime?         @map("deleted_at")
+  fundAccount    FundAccount?      @relation(fields: [fundAccountId], references: [id], onDelete: Restrict)
+  payee          Payee?            @relation(fields: [payeeId], references: [id], onDelete: Restrict)
+  requests       TransferRequest[]
+
+  @@index([fundAccountId, enabled])
+  @@map("transfer_rule")
+}
+
+// 转账单：金额、收款人、规则版本在生成时固定。
+// PREPARING 已领取未授权 / CLAIMED 已授权提交或历史执行中 / UNKNOWN 须核实；只有 PREPARING 可自动退回 READY。
+model TransferRequest {
+  accountId String? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  batchId String? @map("batch_id")
+  sessionId String? @map("session_id")
+  reserveSnapshot Decimal @default(0) @map("reserve_snapshot") @db.Decimal(20, 2)
+  id              String       @id
+  outBizNo        String       @unique @map("out_biz_no")
+  // TEST（手动转账测试）单不属于任何策略，也不关联收款人库
+  ruleId          String?      @map("rule_id")
+  ruleVersion     Int?         @map("rule_version")
+  fundAccountId   String?      @map("fund_account_id")
+  payeeId         String?      @map("payee_id")
+  // 转账测试单自带的收款信息：账号加密存放，姓名和备注明文（备注最多 20 字）
+  testPayeeName             String? @map("test_payee_name") @db.VarChar(100)
+  testPayeeAccountEncrypted String? @map("test_payee_account_encrypted") @db.Text
+  testRemark                String? @map("test_remark") @db.VarChar(20)
+  // 采集端最近一次进度上报（3 秒心跳），用于判断脚本是否卡住；完整日志按时间追加在 progressLogs 里
+  progressAt      DateTime?    @map("progress_at")
+  progressNote    String?      @map("progress_note") @db.VarChar(200)
+  progressLogs    Json?        @map("progress_logs")
+  amount          Decimal      @db.Decimal(20, 2)
+  balanceSnapshot Decimal      @map("balance_snapshot") @db.Decimal(20, 2)
+  balanceAt       DateTime     @map("balance_at")
+  mode            String
+  status          String
+  collectorId     String?      @map("collector_id")
+  claimedAt       DateTime?    @map("claimed_at")
+  completedAt     DateTime?    @map("completed_at")
+  resultNote      String?      @map("result_note") @db.VarChar(500)
+  // 终态截图的采集时间；图片本体放在 TransferScreenshot，列表查询不会带出
+  screenshotAt    DateTime?    @map("screenshot_at")
+  // 失败原因代码：目前只有 QR_TIMEOUT（扫码确认超时），用于作废同批次后续分笔
+  failureCode     String?      @map("failure_code") @db.VarChar(32)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  rule            TransferRule? @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  fundAccount     FundAccount? @relation(fields: [fundAccountId], references: [id], onDelete: Restrict)
+  payee           Payee?       @relation(fields: [payeeId], references: [id], onDelete: Restrict)
+  screenshot      TransferScreenshot?
+
+  @@index([accountId, status])
+  @@index([batchId])
+  @@index([fundAccountId, status])
+  @@index([status, createdAt])
+  @@map("transfer_request")
+}
+
+// 转账终态截图：一单一图（JPEG data URL），永久保留；单独成表，避免大字段拖慢转账单的列表和领单查询。
+model TransferScreenshot {
+  transferId String          @id @map("transfer_id")
+  image      String          @db.MediumText
+  // 采集端截图时判断的结局（SUCCEEDED / FAILED / UNKNOWN），仅用于展示
+  result     String          @db.VarChar(16)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  transfer   TransferRequest @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  @@map("transfer_screenshot")
+}
+
+// 指令及巡检结果持久化，不保存明文凭据。
+model CollectorCommand {
+  id                  String    @id @db.VarChar(64)
+  collectorId         String    @map("collector_id")
+  accountId           String?   @map("account_id")
+  kind                String    @db.VarChar(32)
+  status              String    @default("PENDING") @db.VarChar(20)
+  sessionId           String?   @map("session_id") @db.VarChar(64)
+  configRevision      Int       @default(1) @map("config_revision")
+  leaseUntil          DateTime? @map("lease_until")
+  payload             Json?
+  result              Json?
+  loginAttemptAt      DateTime? @map("login_attempt_at")
+  loginCredentialHash String?   @map("login_credential_hash") @db.VarChar(64)
+  captchaAttempts     Int       @default(0) @map("captcha_attempts")
+  captchaHashes       Json?     @map("captcha_hashes")
+  error               String?   @db.VarChar(500)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime? @updatedAt @map("updated_at")
+  completedAt         DateTime? @map("completed_at")
+  collector           Collector @relation(fields: [collectorId], references: [id], onDelete: Cascade)
+
+  @@index([collectorId, status, kind])
+  @@index([leaseUntil])
+  @@map("collector_command")
+}
+
+// 完整分页快照先暂存，收齐后才原子替换环境清单。
+model CollectorInventoryPage {
+  id          String    @id @default(cuid())
+  collectorId String    @map("collector_id")
+  syncId      String    @map("sync_id") @db.VarChar(64)
+  page        Int
+  totalPages  Int       @map("total_pages")
+  profiles    Json
+  digest      String    @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  collector   Collector @relation(fields: [collectorId], references: [id], onDelete: Cascade)
+
+  @@unique([collectorId, syncId, page])
+  @@map("collector_inventory_page")
+}
+
+// Telegram 配置和投递只存放在中心数据库。
+model TelegramBot {
+  id                 String   @id @default("default")
+  botId              String?
+  username           String?
+  displayName        String?
+  tokenEncrypted     String?  @db.Text
+  enabled            Boolean  @default(false)
+  version            Int      @default(0)
+  credentialsVersion Int      @default(0)
+  dispatchEpoch      Int      @default(0)
+  enabledAt          DateTime?
+  nextUpdateOffset   Int      @default(0)
+  leaseOwner         String?
+  leaseUntil         DateTime?
+  heartbeatAt        DateTime?
+  lastReceivedAt     DateTime?
+  lastSentAt         DateTime?
+  lastCheckedAt      DateTime?
+  lastError          String?  @db.VarChar(500)
+  menuVersion        Int      @default(0)
+  menuSyncedVersion  Int      @default(-1)
+  menuError          String?  @db.VarChar(500)
+  channelStatusNoticeEnabled Boolean @default(false) @map("channel_status_notice_enabled")
+  channelStatusNoticeIntervalMinutes Int @default(5) @map("channel_status_notice_interval_minutes")
+  channelStatusNoticeSentAt DateTime? @map("channel_status_notice_sent_at")
+  channelStatusNoticeTemplate String @default("%ZT %ZD %BH %MC 收款/限额 %SK/%SKXE 笔数/限额 %BS/%BSXE 总收款/总笔数 %ZSK/%ZBS 5分 %5FCGL/%5FSK 15分 %15FCGL/%15FSK 30分 %30FCGL/%30FSK 60分 %60FCGL/%60FSK 全天 %QTCGL/%QTSK") @map("channel_status_notice_template") @db.Text
+  channelStatusNoticeSavedTemplates String @default("[]") @map("channel_status_notice_saved_templates") @db.MediumText
+  updatedAt          DateTime @updatedAt
+  @@map("telegram_bot")
+}
+
+model TelegramTarget {
+  id            String   @id
+  botId         String
+  chatId        String
+  threadKey     Int      @default(0)
+  name          String
+  enabled       Boolean  @default(false)
+  verified      Boolean  @default(true)
+  archived      Boolean  @default(false)
+  scope         Json
+  version       Int      @default(0)
+  lastError     String?  @db.VarChar(500)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([botId, chatId, threadKey])
+  @@index([botId, archived, enabled])
+  @@map("telegram_target")
+}
+
+model TelegramSubscription {
+  id                    String  @id
+  targetId              String
+  eventType             String
+  enabled               Boolean @default(true)
+  repeatIntervalMinutes Int     @default(0)
+  sendRecovery          Boolean @default(true)
+  @@unique([targetId, eventType])
+  @@map("telegram_subscription")
+}
+
+model TelegramUserBinding {
+  id               String   @id
+  botId            String
+  telegramUserId   String
+  sysUserId        String
+  displayName      String?
+  enabled          Boolean  @default(false)
+  allowedTargetIds Json
+  scope            Json
+  version          Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  @@unique([botId, telegramUserId])
+  @@unique([botId, sysUserId])
+  @@map("telegram_user_binding")
+}
+
+model TelegramCommand {
+  id                String   @id
+  botId             String
+  name              String   @db.VarChar(32)
+  description       String   @db.VarChar(256)
+  actionKey         String
+  enabled           Boolean  @default(false)
+  allowedTargetIds  Json
+  allowedBindingIds Json
+  defaults          Json
+  confirmRequired   Boolean  @default(false)
+  version           Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  @@unique([botId, name])
+  @@map("telegram_command")
+}
+
+model TelegramChallenge {
+  id                 String   @id
+  botId              String
+  type               String
+  codeHash           String   @unique @db.VarChar(64)
+  sysUserId          String
+  expectedTelegramId String?
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  createdAt          DateTime @default(now())
+  @@index([expiresAt])
+  @@map("telegram_challenge")
+}
+
+model TelegramUpdate {
+  id         String   @id
+  botId      String
+  updateId   Int
+  epoch      Int
+  payload    Json
+  status     String   @default("PENDING")
+  error      String?  @db.VarChar(300)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@unique([botId, updateId])
+  @@index([botId, status, updateId])
+  @@map("telegram_update")
+}
+
+model TelegramCommandExecution {
+  id                   String   @id
+  botId                String
+  updateId             Int
+  commandId            String
+  commandVersion       Int
+  bindingId            String
+  bindingVersion       Int
+  targetId             String
+  targetVersion        Int
+  actorUserId          String
+  telegramUserId       String
+  actionKey            String
+  objectId             String?
+  params               Json
+  epoch                Int
+  confirmTokenHash     String?  @unique @db.VarChar(64)
+  expiresAt            DateTime?
+  status               String   @default("PENDING")
+  result               String?  @db.Text
+  createdAt            DateTime @default(now())
+  completedAt          DateTime?
+  @@unique([botId, updateId])
+  @@index([targetId, createdAt])
+  @@index([status, expiresAt])
+  @@map("telegram_command_execution")
+}
+
+model NotificationIncident {
+  id                 String   @id
+  entityType         String
+  entityId           String
+  eventType          String
+  cause              String   @default("")
+  activeKey          String?  @unique @db.VarChar(64)
+  title              String   @db.VarChar(300)
+  occurredAt         DateTime @default(now())
+  lastObservedAt     DateTime @default(now())
+  recoveredAt        DateTime?
+  acknowledgedAt     DateTime?
+  acknowledgedBy     String?
+  lastAnnouncedEpoch Int      @default(-1)
+  @@index([entityType, entityId, eventType])
+  @@index([recoveredAt, occurredAt])
+  @@map("notification_incident")
+}
+
+model NotificationEvent {
+  id            String   @id
+  incidentId    String
+  phase         String
+  sourceId      String
+  eventKey      String   @unique @db.VarChar(64)
+  telegramEpoch Int?
+  targetId      String?
+  createdAt     DateTime @default(now())
+  expandedAt    DateTime?
+  skippedReason String?
+  @@index([expandedAt, createdAt])
+  @@map("notification_event")
+}
+
+model TelegramDelivery {
+  transferRequestId String?
+  id                 String   @id
+  botId              String
+  epoch              Int
+  eventId            String?
+  incidentId         String?
+  commandExecutionId String?
+  dedupeKey          String   @unique @db.VarChar(64)
+  targetId           String?
+  chatId             String
+  threadKey          Int      @default(0)
+  kind               String
+  text               String   @db.LongText
+  buttons            Json?
+  // 转账二维码等图片消息：JPEG data URL，发送成功或作废后清空
+  image              String?  @db.MediumText
+  status             String   @default("PENDING")
+  attempts           Int      @default(0)
+  nextAttemptAt      DateTime @default(now())
+  leaseOwner         String?
+  leaseUntil         DateTime?
+  messageId          Int?
+  error              String?  @db.VarChar(500)
+  createdAt          DateTime @default(now())
+  sentAt             DateTime?
+  @@index([botId, status, nextAttemptAt])
+  @@index([targetId, createdAt])
+  @@index([incidentId, targetId])
+  @@map("telegram_delivery")
+}
+
+model TelegramIncidentPreference {
+  id          String   @id
+  incidentId  String
+  targetId    String
+  mutedUntil  DateTime
+  updatedBy   String
+  @@unique([incidentId, targetId])
+  @@map("telegram_incident_preference")
+}

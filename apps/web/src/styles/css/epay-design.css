@@ -1,0 +1,622 @@
+@import './epay-controls.css';
+@import './epay-statistics.css';
+
+:root {
+  --epay-blue: #007aff;
+  --epay-monitoring: #16855f;
+  --epay-action-ink: #0066cc;
+  --epay-nav-top: #d9eafb;
+  --epay-nav-bottom: #d9eafb;
+  --epay-nav-text: #19304f;
+  --epay-nav-muted: #60748f;
+  --epay-nav-hover: #c6def8;
+  --epay-edge: #bdd3ea;
+  --epay-muted: #60748f;
+  --epay-surface: #ffffff;
+  --epay-canvas: #f4f8ff;
+  --epay-soft: #d1e5ff;
+  --epay-text: #334155;
+  --epay-heading: #1f2a44;
+  --epay-tint: #f7fbff;
+  --epay-glass: #ffffffd9;
+  --epay-glass-edge: #ffffffcc;
+  --epay-control: #ffffffb8;
+  --epay-track: #e1edf9;
+  --epay-success: var(--epay-action-ink);
+  --epay-success-soft: #e8f2ff;
+  --epay-warning: #926100;
+  --epay-warning-soft: #fff4d6;
+  --epay-danger: #d70015;
+  --epay-danger-soft: #fdebed;
+  --epay-glow-blue: rgb(0 122 255 / 14%);
+  --epay-glow-violet: rgb(94 92 230 / 10%);
+  --epay-glow-cyan: rgb(100 210 255 / 8%);
+  --epay-glow-white: rgb(255 255 255 / 72%);
+  --epay-ambient-glare:
+    radial-gradient(ellipse 42% 34% at 14% 0%, var(--epay-glow-white), transparent 72%),
+    radial-gradient(ellipse 60% 10% at 50% 0%, var(--epay-glow-white), transparent 80%),
+    radial-gradient(ellipse 65% 45% at 0% 0%, var(--epay-glow-blue), transparent 72%),
+    radial-gradient(ellipse 45% 55% at 100% 85%, var(--epay-glow-cyan), transparent 72%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, var(--epay-glow-violet), transparent 72%);
+  --epay-float-shadow: 0 16px 48px #1d1d1f12, 0 2px 8px #1d1d1f08;
+  --epay-spring: cubic-bezier(.22, .9, .28, 1.06);
+  --epay-shadow: inset 0 1px var(--epay-glass-edge), 0 4px 16px #1d3b5e05;
+  --epay-ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+html.dark {
+  --epay-blue: #0a84ff;
+  --epay-monitoring: #30d59a;
+  --epay-action-ink: #409cff;
+  --epay-nav-top: #132238;
+  --epay-nav-bottom: #132238;
+  --epay-nav-text: #f2f6ff;
+  --epay-nav-muted: #9fb3ce;
+  --epay-nav-hover: #203653;
+  --epay-edge: #2d4666;
+  --epay-muted: #9fb3ce;
+  --epay-surface: #17253a;
+  --epay-canvas: #0f1b2d;
+  --epay-soft: #1c4c7d;
+  --epay-text: #dbe7f7;
+  --epay-heading: #f5f9ff;
+  --epay-tint: #1c3048;
+  --epay-glass: #17253ae6;
+  --epay-glass-edge: #ffffff16;
+  --epay-control: #1f324dcc;
+  --epay-track: #1c2c42;
+  --epay-success: var(--epay-action-ink);
+  --epay-success-soft: #142d4b;
+  --epay-warning: #ffd60a;
+  --epay-warning-soft: #4a3d08;
+  --epay-danger: #ff453a;
+  --epay-danger-soft: #38191d;
+  --epay-glow-blue: rgb(10 132 255 / 20%);
+  --epay-glow-violet: rgb(94 92 230 / 16%);
+  --epay-glow-cyan: rgb(100 210 255 / 12%);
+  --epay-glow-white: rgb(186 218 255 / 9%);
+  --epay-float-shadow: 0 20px 60px #00000066, 0 2px 8px #00000040;
+  --epay-shadow: 0 4px 18px #050b1718;
+}
+
+html, body, #app { width: 100%; height: 100%; min-width: 0; overflow: hidden; }
+body {
+  background: var(--epay-ambient-glare), var(--epay-nav-top);
+  color: var(--epay-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.epay-workspace {
+  display: grid;
+  grid-template-columns: var(--epay-sidebar-width, 212px) minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  padding-top: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--epay-ambient-glare), var(--epay-nav-top);
+  transition: grid-template-columns 280ms var(--epay-ease);
+}
+.epay-workspace.is-full { grid-template-columns: minmax(0, 1fr); padding: 10px 10px 0; }
+/* 侧栏覆盖工作区外阴影，避免选中底板在连接处被压暗。 */
+.epay-workspace-sider { position: relative; z-index: 1; min-width: 0; min-height: 0; height: calc(100% - 12px); overflow: hidden; }
+.epay-sider {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 14px 0 10px 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--epay-nav-text);
+  background: transparent;
+}
+.epay-workspace.is-collapsed .epay-sider { padding-left: 0; }
+.epay-brand {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+  height: 66px;
+  flex: 0 0 66px;
+  padding-left: 12px;
+  color: var(--epay-nav-text);
+  text-decoration: none;
+}
+.epay-brand-mark {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--epay-blue);
+  background: var(--epay-canvas);
+  box-shadow: inset 0 1px #ffffff80, 0 3px 9px #1d1d1f12;
+  font-size: 26px;
+  font-weight: 750;
+  line-height: 1;
+}
+/* 浅色标识采用深底反白，避免与侧栏底色混在一起。 */
+html:not(.dark) .epay-brand-mark {
+  color: var(--epay-surface);
+  background: var(--epay-nav-text);
+  box-shadow: none;
+}
+.epay-brand-copy { display: grid; min-width: 0; line-height: 1.1; }
+.epay-brand-copy strong { color: var(--epay-nav-text); font-size: 22px; font-weight: 700; letter-spacing: .2px; }
+.epay-brand-copy small { margin-top: 4px; color: var(--epay-nav-muted); font-size: 9px; letter-spacing: .6px; white-space: nowrap; }
+.epay-nav-toggle-standalone { display: flex; justify-content: center; }
+.epay-overview-toggle { position: absolute; right: 8px; z-index: 2; display: flex; align-items: center; height: var(--el-menu-item-height); }
+.epay-overview-toggle + .el-menu-item { padding-right: 56px; }
+.epay-nav-toggle .el-button { width: 30px; height: 30px; min-height: 30px; padding: 0; border-radius: 9px; color: var(--epay-nav-muted); background: transparent; }
+.epay-nav-toggle .el-button:hover { color: var(--epay-nav-text); background: var(--epay-nav-hover); }
+.epay-sider-footer { display: grid; flex: 0 0 auto; gap: 8px; margin: 8px 12px 0 0; padding: 13px 4px 0 10px; border-top: 1px solid var(--epay-edge); }
+.epay-session { display: flex; align-items: center; gap: 8px; color: var(--epay-nav-muted); font-size: 11px; }
+.epay-session > span { width: 7px; height: 7px; border-radius: 50%; background: var(--epay-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--epay-blue) 14%, transparent); }
+.epay-sider .epay-header-user { color: var(--epay-nav-text); }
+.epay-sider .epay-header-user .flex.items-center { min-height: 44px; gap: 10px; padding: 0 7px; color: var(--epay-nav-text); }
+.epay-sider .epay-header-user .flex.items-center > svg { display: grid; width: 32px; height: 32px; padding: 7px; box-sizing: border-box; border-radius: 10px; color: var(--epay-blue); background: var(--epay-soft); }
+.epay-sider .epay-header-user .flex.items-center > span { display: block; overflow: hidden; color: var(--epay-nav-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.epay-workspace.is-collapsed .epay-brand { justify-content: center; padding: 0; }
+.epay-workspace.is-collapsed .epay-session,
+.epay-workspace.is-collapsed .epay-header-user .flex.items-center > span { display: none; }
+.epay-workspace.is-collapsed .epay-sider-footer { justify-content: center; margin-right: 0; padding-left: 0; }
+.epay-workspace.is-collapsed .epay-sider .epay-header-user .flex.items-center { justify-content: center; padding: 0; }
+
+.epay-menu-track { display: flow-root; position: relative; min-height: 100%; }
+.epay-menu-root { position: relative; height: 100%; box-sizing: border-box; padding-block: 16px; overflow: hidden; }
+/* 固定子菜单的格式化上下文，避免收起动画移除 overflow 后边距塌陷。 */
+.epay-menu-root .el-menu {
+  display: flow-root;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--epay-nav-text);
+  --el-menu-active-color: var(--epay-blue);
+  --el-menu-hover-bg-color: var(--epay-nav-hover);
+  --el-menu-item-height: 47px;
+}
+.epay-menu-root .el-menu-item,
+.epay-menu-root .el-sub-menu__title {
+  margin-right: 0;
+  color: var(--epay-nav-text);
+  border-radius: 24px 0 0 24px;
+  transition: color 180ms, background-color 180ms;
+}
+.epay-menu-root .el-menu-item::before,
+.epay-menu-root .el-sub-menu__title::before { display: none; }
+.epay-menu-root .el-menu-item:not(.is-active):hover,
+.epay-menu-root .el-sub-menu__title:hover { background: var(--epay-nav-hover); }
+.epay-menu-root .el-menu-item.is-active { color: var(--epay-blue); background: transparent; font-weight: 600; }
+.epay-menu-root .el-menu-item.is-active .el-icon { color: var(--epay-blue); }
+.epay-menu-root .el-menu .el-sub-menu.is-active > .el-sub-menu__title { color: var(--epay-nav-text); }
+.epay-menu-root .el-menu-item,
+.epay-menu-root .el-sub-menu__title { margin-left: 0; }
+.epay-menu-root .el-menu > .el-menu-item,
+.epay-menu-root .el-menu > .el-sub-menu > .el-sub-menu__title { margin-left: 4px; padding-left: 13px !important; }
+.epay-menu-root .el-menu--inline > .el-menu-item { margin-left: 12px; padding-left: 34px !important; font-size: 12px; }
+.epay-menu-root .el-icon:not(.el-sub-menu__icon-arrow) {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 5px;
+  border-radius: 9px;
+  background: var(--epay-soft);
+  color: var(--epay-blue);
+  transition: transform 260ms var(--epay-ease);
+}
+.epay-menu-root .el-menu > :nth-child(7n + 1) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 1) > .el-sub-menu__title > .el-icon { color: #277d76; background: #e2f2ed; }
+.epay-menu-root .el-menu > :nth-child(7n + 2) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 2) > .el-sub-menu__title > .el-icon { color: #347db6; background: #e2f0fb; }
+.epay-menu-root .el-menu > :nth-child(7n + 3) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 3) > .el-sub-menu__title > .el-icon { color: #a2528c; background: #f8e9f2; }
+.epay-menu-root .el-menu > :nth-child(7n + 4) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 4) > .el-sub-menu__title > .el-icon { color: #a56d19; background: #fff0d8; }
+.epay-menu-root .el-menu > :nth-child(7n + 5) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 5) > .el-sub-menu__title > .el-icon { color: #6c65b7; background: #eeebff; }
+.epay-menu-root .el-menu > :nth-child(7n + 6) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 6) > .el-sub-menu__title > .el-icon { color: #3287a0; background: #e3f3f6; }
+.epay-menu-root .el-menu > :nth-child(7n + 7) > .el-icon,
+.epay-menu-root .el-menu > :nth-child(7n + 7) > .el-sub-menu__title > .el-icon { color: #b26b54; background: #faece6; }
+.epay-menu-root .el-menu-item:hover .el-icon { transform: translateY(-1px); }
+.epay-menu-root .el-sub-menu__icon-arrow { color: inherit !important; background: transparent !important; }
+.epay-menu-indicator {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 24px 0 0 24px;
+  background: var(--epay-canvas);
+  transform-origin: right center;
+  transition: translate 380ms var(--epay-spring), width 280ms var(--epay-ease), height 280ms var(--epay-ease), opacity 150ms;
+}
+.epay-menu-indicator::before, .epay-menu-indicator::after { position: absolute; right: 0; width: 18px; height: 18px; content: ''; }
+.epay-menu-indicator::before { top: -18px; background: radial-gradient(circle at 0 0, transparent 18px, var(--epay-canvas) 18.5px); }
+.epay-menu-indicator::after { bottom: -18px; background: radial-gradient(circle at 0 100%, transparent 18px, var(--epay-canvas) 18.5px); }
+.epay-workspace.is-collapsed .epay-menu-root .el-menu > .el-menu-item,
+.epay-workspace.is-collapsed .epay-menu-root .el-menu > .el-sub-menu > .el-sub-menu__title { margin-left: 0; }
+.epay-workspace.is-collapsed .epay-menu-root .el-menu > .el-menu-item,
+.epay-workspace.is-collapsed .epay-menu-root .el-menu > .el-sub-menu > .el-sub-menu__title { padding-left: 18px !important; }
+html.dark .epay-menu-root .el-menu { --el-menu-active-color: var(--epay-blue); }
+html.dark .epay-menu-root .el-menu-item.is-active { color: var(--epay-blue); }
+html.dark .epay-menu-root .el-menu-item.is-active .el-icon { color: var(--epay-blue); }
+html.dark .epay-menu-root .el-menu .el-sub-menu.is-active > .el-sub-menu__title { color: var(--epay-nav-text); }
+html.dark .epay-menu-indicator { background: var(--epay-canvas); }
+html.dark .epay-menu-root .el-icon:not(.el-sub-menu__icon-arrow) { color: #b9dcff; background: #294563; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 1) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 1) > .el-sub-menu__title > .el-icon { color: #abe0cf; background: #294941; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 3) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 3) > .el-sub-menu__title > .el-icon { color: #e2c5f2; background: #443754; }
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 4) > .el-icon,
+html.dark .epay-menu-root .el-menu > :nth-child(7n + 4) > .el-sub-menu__title > .el-icon { color: #f3d396; background: #50432e; }
+.epay-menu-root .simplebar-scrollbar::before { background: #d6e4fa; }
+
+.epay-workspace-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: calc(100% - 12px);
+  margin: 0 12px 12px 0;
+  overflow: clip;
+  border: 0;
+  border-radius: 24px;
+  background: var(--epay-ambient-glare), var(--epay-canvas);
+  box-shadow: 0 12px 36px #152d4d16;
+}
+.epay-workspace-header { position: absolute; inset: 0 0 auto; z-index: 20; height: 66px; }
+.epay-workspace.is-scrolled .epay-header { box-shadow: 0 5px 18px #122a4e0c, inset 0 1px var(--epay-glass-edge); }
+.epay-header {
+  height: 66px;
+  box-sizing: border-box;
+  padding-inline: 28px;
+  color: var(--epay-text);
+  background: var(--epay-glass);
+  border-bottom: 1px solid var(--epay-edge);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  box-shadow: none;
+}
+.epay-header .epay-header-back {
+  flex: none;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  margin-right: 12px;
+  border-radius: 12px;
+  color: var(--epay-action-ink);
+  background: var(--epay-success-soft);
+}
+.epay-header-back svg { width: 20px; height: 20px; }
+.epay-breadcrumb { gap: 10px; }
+.epay-workspace-label { color: var(--epay-muted); font-size: 13px; white-space: nowrap; }
+.epay-workspace-label > span { margin-left: 9px; color: #9eabc0; }
+.epay-header-actions { gap: 8px; }
+.epay-header-actions > div { display: flex; align-items: center; }
+.epay-header-actions .el-button.is-text { min-width: 36px; min-height: 36px; border-radius: 50%; color: var(--epay-muted); }
+.epay-header-user { display: flex; align-items: center; padding: 0 5px; color: var(--epay-muted); cursor: pointer; }
+.epay-header-user > .el-dropdown { padding-inline: 0; }
+.epay-header-user .flex.items-center { gap: 0; }
+.epay-header-user .flex.items-center > svg { width: 22px; height: 22px; }
+.epay-header-user .flex.items-center > span { display: none; }
+.epay-header-actions .epay-header-user .flex.items-center > svg { width: 32px; height: 32px; padding: 7px; border-radius: 50%; color: var(--epay-blue); background: var(--epay-soft); box-sizing: border-box; }
+.epay-global-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: clamp(230px, 24vw, 340px);
+  height: 38px;
+  padding: 0 13px;
+  box-sizing: border-box;
+  border: 1px solid var(--epay-edge);
+  border-radius: 100px;
+  color: var(--epay-muted);
+  background: var(--epay-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms, box-shadow 180ms, transform 140ms;
+}
+.epay-global-search:hover { border-color: #a9c4eb; box-shadow: 0 2px 7px #2b57910c; }
+.epay-global-search:active { transform: scale(.985); }
+.epay-global-search > svg { width: 16px; height: 16px; }
+.epay-global-search > span { flex: 1; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.epay-global-search kbd { padding: 2px 6px; border-radius: 5px; color: #657996; background: #f0f3f8; font: 10px/1.4 inherit; }
+html.dark .epay-header { background: var(--epay-glass); }
+
+html.dark .epay-global-search { color: var(--epay-muted); background: var(--epay-control); }
+html.dark .epay-global-search kbd { color: #c1d2eb; background: #354963; }
+
+.epay-workspace-tabs { position: absolute; inset: 66px 0 auto; z-index: 19; background: var(--epay-glass); backdrop-filter: blur(24px); }
+.epay-workspace.has-tabs .epay-workspace-scroll { padding-top: 136px; scroll-padding-top: 130px; }
+.epay-workspace.is-full .epay-workspace-scroll { padding-top: 26px; }
+.epay-workspace-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 92px;
+  scroll-padding-top: 86px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  scrollbar-color: #a6bad7 transparent;
+  scrollbar-width: thin;
+}
+.epay-workspace-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.epay-workspace-scroll::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: #a6bad7; background-clip: padding-box; }
+/* 总览与业务页面共用标题卡片，颜色随现有主题切换。 */
+.epay-page-heading {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px 24px;
+  min-width: 0;
+  min-height: 108px;
+  padding: 22px 24px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--epay-edge) 70%, var(--epay-surface));
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--epay-soft) 42%, transparent), transparent 60%),
+    linear-gradient(110deg, var(--epay-surface), var(--epay-tint));
+  box-shadow: var(--epay-shadow);
+}
+.epay-page-heading::before {
+  position: absolute;
+  inset: 28px auto 28px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--epay-blue);
+  content: '';
+}
+.epay-page-heading-main { display: flex; flex: 1 1 280px; align-items: center; gap: 16px; min-width: 0; }
+.epay-page-heading-icon {
+  display: grid;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--epay-blue) 14%, var(--epay-surface));
+  border-radius: 16px;
+  color: var(--epay-action-ink);
+  background: linear-gradient(145deg, var(--epay-surface), color-mix(in srgb, var(--epay-soft) 65%, var(--epay-surface)));
+  box-shadow: inset 0 1px var(--epay-glass-edge), 0 4px 10px color-mix(in srgb, var(--epay-blue) 7%, transparent);
+}
+.epay-page-heading-icon svg { width: 26px; height: 26px; }
+.epay-page-heading-copy { min-width: 0; }
+.epay-page-heading h1 { margin: 0; color: var(--epay-heading); font-size: 26px; font-weight: 680; letter-spacing: -.5px; line-height: 1.3; overflow-wrap: anywhere; text-wrap: balance; }
+.epay-page-heading p { margin: 6px 0 0; color: var(--epay-muted); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.epay-page-intro { flex-shrink: 0; margin-bottom: 20px; }
+.epay-page-content { flex: 1 0 auto; min-width: 0; padding: 0 28px 28px !important; background: transparent; }
+.epay-page-view { min-width: 0; }
+.epay-page-view.flex-col-stretch { gap: 20px; }
+.epay-page-content > .flex-col-stretch { gap: 20px; }
+.epay-workspace-scroll footer { margin-top: auto; color: var(--epay-muted); }
+.epay-workspace-scroll > footer { flex-shrink: 0; }
+
+
+.epay-page-content .epay-sites-page > .el-card { flex: 0 0 auto; }
+.epay-page-content .epay-sites-page .el-table { width: 100%; }
+.epay-page-content .epay-sites-page .el-pagination { flex-wrap: wrap; }
+
+.epay-overview { display: grid; gap: 20px; padding: 0 !important; color: var(--epay-text); }
+.epay-overview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: auto; }
+.epay-period { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--epay-edge) 70%, var(--epay-surface)); border-radius: 100px; color: var(--epay-muted); background: var(--epay-surface); font-size: 12px; white-space: nowrap; }
+.epay-period svg { width: 15px; height: 15px; }
+.epay-overview-controls .el-button { min-height: 40px; padding-inline: 18px; border-radius: 100px; }
+.epay-overview-controls .el-button svg { width: 15px; height: 15px; margin-right: 6px; }
+.epay-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.epay-metric { position: relative; min-width: 0; min-height: 144px; padding: 18px 20px; overflow: hidden; border: 1px solid var(--epay-edge); border-radius: 20px; background: var(--epay-surface); box-shadow: var(--epay-shadow); transition: transform 220ms var(--epay-ease), box-shadow 220ms, border-color 180ms; }
+.epay-metric::after { position: absolute; inset: 0; pointer-events: none; content: ''; background: radial-gradient(ellipse at 95% 0%, var(--epay-card-glow), transparent 80%); }
+.epay-metric.tone-blue { --epay-card-ink: var(--epay-blue); --epay-card-glow: #eaf1fd; }
+.epay-metric.tone-cyan { --epay-card-ink: #318ba5; --epay-card-glow: #e7f5f7; }
+.epay-metric.tone-amber { --epay-card-ink: #a06c1d; --epay-card-glow: #fff3df; }
+.epay-metric.tone-rose { --epay-card-ink: #b25778; --epay-card-glow: #fbedf2; }
+.epay-metric-label { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--epay-muted); font-size: 13px; }
+.epay-color-icon { display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: #327eb6; background: #e7f1fc; }
+.epay-color-icon svg { width: 18px; height: 18px; }
+.epay-color-icon.tone-amber { color: #a06c1d; background: #fff1d8; }
+.epay-color-icon.tone-cyan { color: #318ba5; background: #e3f3f5; }
+.tone-blue > .epay-metric-label .epay-color-icon { color: var(--epay-blue); background: #e6effd; }
+.tone-cyan > .epay-metric-label .epay-color-icon { color: #318ba5; background: #e3f3f5; }
+.tone-amber > .epay-metric-label .epay-color-icon { color: #a06c1d; background: #fff1d8; }
+.tone-rose > .epay-metric-label .epay-color-icon { color: #b25778; background: #fbeaf0; }
+.epay-metric-value { position: relative; z-index: 1; margin-top: 8px; color: var(--epay-text); font-size: 36px; font-weight: 600; letter-spacing: -1.2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.epay-metric:first-child .epay-metric-value { color: var(--epay-blue); }
+.epay-metric-value small { margin-left: 5px; color: var(--epay-muted); font-size: 14px; font-weight: 450; }
+.epay-metric p { position: relative; z-index: 1; margin: 9px 0 0; color: var(--epay-muted); font-size: 11px; }
+html.dark .epay-metric { --epay-card-glow: #ffffff06; }
+html.dark .epay-metric.tone-blue { --epay-card-ink: #a8c6fb; }
+html.dark .epay-metric.tone-cyan { --epay-card-ink: #94ced9; }
+html.dark .epay-metric.tone-amber { --epay-card-ink: #e7c887; }
+html.dark .epay-metric.tone-rose { --epay-card-ink: #e2a9bd; }
+.epay-overview-middle { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(340px, 1fr); gap: 20px; }
+.epay-panel { min-width: 0; padding: 32px 28px; border: 1px solid var(--epay-edge); border-radius: 20px; background: var(--epay-surface); box-shadow: var(--epay-shadow); }
+.epay-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.epay-panel-heading h2 { margin: 0; color: var(--epay-text); font-size: 17px; font-weight: 600; letter-spacing: -.25px; }
+.epay-caption-chip { flex: 0 0 auto; padding: 5px 9px; border-radius: 8px; color: var(--epay-blue); background: var(--epay-soft); font-size: 11px; }
+.epay-caption-chip.is-warning { color: #98671e; background: #fff4df; }
+html.dark .epay-caption-chip.is-warning { color: #ebcb87; background: #493d2a; }
+.epay-chart-summary { display: flex; align-items: baseline; gap: 9px; margin: 13px 0 8px; }
+.epay-chart-summary strong { color: var(--epay-text); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.epay-chart-summary span { color: var(--epay-muted); font-size: 11px; }
+.epay-chart-legend { display: flex; gap: 16px; color: var(--epay-muted); font-size: 11px; }
+.epay-chart-legend span { display: flex; align-items: center; gap: 6px; }
+.epay-chart-legend i { width: 13px; height: 3px; border-radius: 2px; background: #81a7e6; }
+.epay-chart-legend span + span i { height: 0; border-top: 2px dashed #70b7c9; background: transparent; }
+.epay-overview-chart { width: 100%; height: 214px; margin-top: 3px; }
+.epay-tasks-panel { display: flex; flex-direction: column; min-height: 330px; }
+.epay-task-list { flex: 1; padding-top: 14px; }
+.epay-task { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 76px; padding: 13px 0; border: 0; border-bottom: 1px solid var(--epay-edge); color: var(--epay-text); background: transparent; text-align: left; cursor: pointer; border-radius: 12px; transition: background 180ms, scale 160ms var(--epay-spring); }
+.epay-task:not(:disabled):hover { background: var(--epay-tint); }
+.epay-task > .epay-color-icon { flex-basis: 36px; width: 36px; height: 36px; }
+.epay-task > span:nth-child(2) { display: grid; flex: 1; min-width: 0; gap: 4px; }
+.epay-task strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.epay-task small { overflow: hidden; color: var(--epay-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.epay-task-chevron { color: #9cabc0; font-size: 19px; transition: transform 200ms var(--epay-ease); }
+.epay-task:not(:disabled):hover .epay-task-chevron { transform: translateX(4px); }
+.epay-task-foot { display: flex; align-items: center; gap: 7px; padding-top: 13px; color: var(--epay-muted); font-size: 10px; }
+.epay-task-foot svg { width: 13px; height: 13px; }
+.epay-task-list .el-empty { padding: 10px 0; }
+.epay-task-list .el-empty__image { width: 68px !important; height: 68px !important; }
+.epay-task-list .el-empty__description { margin-top: 3px; color: var(--epay-muted); font-size: 12px; }
+.epay-overview-sites { padding: 28px 0 0; overflow: hidden; }
+.epay-overview-sites > .epay-panel-heading { padding: 0 28px; }
+.epay-site-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 28px; }
+.epay-segments { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid transparent; border-radius: 100px; background: var(--epay-track); }
+.epay-segment-indicator { position: absolute; top: 3px; bottom: 3px; left: 0; z-index: 0; pointer-events: none; border-radius: 100px; background: var(--epay-surface); box-shadow: 0 1px 4px #162c4e16, inset 0 1px var(--epay-glass-edge); }
+.epay-segments.is-ready .epay-segment-indicator { transition: transform 320ms var(--epay-spring), width 300ms var(--epay-ease); }
+.epay-segments button { position: relative; z-index: 1; min-height: 31px; padding: 0 10px; border: 0; border-radius: 100px; color: var(--epay-muted); background: transparent; font-size: 12px; cursor: pointer; transition: color 180ms, background 180ms, box-shadow 180ms; }
+.epay-segments button.active { color: var(--epay-blue); background: transparent; box-shadow: none; }
+.epay-segments small { margin-left: 3px; color: inherit; font-size: 10px; }
+.epay-site-search { width: min(260px, 40%); }
+.epay-site-cell { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.epay-site-cell > div { display: grid; min-width: 0; gap: 3px; }
+.epay-site-cell strong { overflow: hidden; color: var(--epay-text); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.epay-site-cell small { overflow: hidden; color: var(--epay-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.epay-site-cell .epay-color-icon { flex-basis: 32px; width: 32px; height: 32px; }
+.epay-site-cell__name { display: block; width: 100%; margin: 0; padding: 0; overflow: hidden; border: 0; color: var(--epay-text); background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; line-height: 1.35; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.epay-site-cell__name:hover { color: var(--epay-blue); }
+.epay-site-cell__name:focus-visible { outline: 2px solid var(--epay-blue); outline-offset: 3px; border-radius: 3px; }
+.epay-status { display: inline-flex; align-items: center; gap: 7px; color: var(--epay-muted); font-size: 12px; }
+.epay-status i { width: 6px; height: 6px; border-radius: 50%; background: #94a4bb; }
+.epay-status.is-online { color: var(--epay-action-ink); }
+.epay-status.is-online i { background: var(--epay-blue); }
+
+.epay-time { color: var(--epay-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.epay-overview-foot { padding: 10px 21px 14px; color: var(--epay-muted); font-size: 10px; }
+.epay-recent-panel { padding: 20px 21px; }
+.epay-recent-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; align-items: center; gap: 14px; min-height: 48px; border-bottom: 1px solid var(--epay-edge); font-size: 12px; }
+.epay-recent-row:last-child { border-bottom: 0; }
+
+
+
+
+.epay-mobile-navigation .el-drawer__body { padding: 0; }
+
+@media (max-width: 1120px) {
+  .epay-overview-middle { grid-template-columns: minmax(0, 1.35fr) minmax(290px, .95fr); gap: 14px; }
+  .epay-metric-grid { gap: 11px; }
+  .epay-metric { padding-inline: 15px; }
+  .epay-overview-chart { height: 195px; }
+}
+@media (max-width: 860px) {
+  .epay-overview { gap: 16px; padding: 0 !important; }
+  .epay-overview-middle { grid-template-columns: minmax(0, 1fr); }
+  .epay-tasks-panel { min-height: 0; }
+  .epay-metric { min-height: 120px; }
+}
+@media (max-width: 640px) {
+  .epay-overview { gap: 13px; padding: 0 !important; }
+  .epay-page-heading { gap: 16px; min-height: 0; padding: 18px 16px; border-radius: 16px; }
+  .epay-page-heading::before { inset-block: 22px; }
+  .epay-page-heading-main { flex-basis: 100%; gap: 12px; }
+  .epay-page-heading-icon { flex-basis: 44px; width: 44px; height: 44px; border-radius: 13px; }
+  .epay-page-heading-icon svg { width: 23px; height: 23px; }
+  .epay-page-heading h1 { font-size: 22px; }
+  .epay-page-heading p { font-size: 12px; }
+  .epay-page-intro { margin-bottom: 16px; }
+  .epay-overview-controls { width: 100%; justify-content: space-between; gap: 10px; padding-top: 14px; border-top: 1px solid var(--epay-edge); }
+  .epay-overview-controls .el-button { min-height: 44px; }
+  .epay-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .epay-metric { min-height: 113px; padding: 13px; border-radius: 14px; }
+  .epay-metric-label { font-size: 11px; }
+  .epay-metric-label .epay-color-icon { flex-basis: 27px; width: 27px; height: 27px; border-radius: 8px; }
+  .epay-metric-label .epay-color-icon svg { width: 15px; height: 15px; }
+  .epay-metric-value { font-size: 28px; }
+  .epay-metric-value small { font-size: 11px; }
+  .epay-metric p { margin-top: 7px; font-size: 10px; }
+  .epay-panel { padding: 16px; border-radius: 14px; }
+  .epay-overview-chart { height: 190px; }
+  .epay-overview-sites { padding: 16px 0 0; }
+  .epay-overview-sites > .epay-panel-heading { padding-inline: 15px; }
+  .epay-site-toolbar { flex-wrap: wrap; padding: 12px 15px; }
+  .epay-site-search { width: 100%; }
+  .epay-overview-sites .el-table { width: 100%; }
+  .epay-recent-row { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 9px; padding: 8px 0; }
+  .epay-recent-row .epay-time { grid-column: 1; }
+  .epay-recent-row .el-tag { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+@media (max-width: 900px) {
+  .epay-workspace { grid-template-columns: var(--epay-sidebar-width, 212px) minmax(0, 1fr); }
+  .epay-header { padding-inline: 18px; }
+  .epay-page-content { padding-inline: 22px !important; }
+}
+@media (max-width: 640px) {
+  .epay-workspace { display: block; padding: 6px; }
+  .epay-workspace-sider { display: none; }
+  .epay-workspace-shell, .epay-workspace.is-full .epay-workspace-shell { width: 100%; height: 100%; margin: 0; border: 0; border-radius: 16px; }
+  .epay-workspace-header, .epay-header { height: 58px; }
+  .epay-workspace-scroll { padding-top: 78px; scroll-padding-top: 72px; }
+  .epay-header { padding-inline: 12px; }
+  .epay-global-search { width: 38px; padding: 0 10px; border-radius: 50%; }
+  .epay-global-search > span, .epay-global-search kbd { display: none; }
+  .epay-header-actions { gap: 2px; }
+  .epay-workspace-label { display: none; }
+  .epay-page-content { padding: 0 16px 20px !important; }
+  
+  
+}
+/* 由全站动效偏好统一控制，包含传送到 body 的抽屉、弹窗和下拉层。 */
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] .el-overlay[class],
+html[data-motion='reduced'] .el-drawer[class],
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  scroll-behavior: auto !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 状态色与图标底色在深色主题下也保留清晰层次。 */
+.epay-page-intro h1, .epay-overview-heading h1, .epay-panel-heading h2, .epay-metric-value, .epay-chart-summary strong { color: var(--epay-heading); }
+.epay-metric:first-child .epay-metric-value { color: var(--epay-blue); }
+.epay-task:active { scale: .985; }
+.epay-color-icon { box-shadow: inset 0 1px var(--epay-glass-edge); }
+html.dark .epay-color-icon, html.dark .tone-blue > .epay-metric-label .epay-color-icon { color: #a8c6fb; background: #2c405d; }
+html.dark .epay-color-icon.tone-cyan, html.dark .tone-cyan > .epay-metric-label .epay-color-icon { color: #94ced9; background: #29444e; }
+html.dark .epay-color-icon.tone-amber, html.dark .tone-amber > .epay-metric-label .epay-color-icon { color: #e7c887; background: #493e2d; }
+html.dark .tone-rose > .epay-metric-label .epay-color-icon { color: #e2a9bd; background: #493240; }
+html.dark .epay-metric.tone-blue { --epay-card-glow: #2c405d55; }
+html.dark .epay-metric.tone-cyan { --epay-card-glow: #29444e55; }
+html.dark .epay-metric.tone-amber { --epay-card-glow: #493e2d55; }
+html.dark .epay-metric.tone-rose { --epay-card-glow: #49324055; }
+.epay-menu-root .el-menu > .el-menu-item, .epay-menu-root .el-menu > .el-sub-menu > .el-sub-menu__title { margin-bottom: 7px; font-weight: 500; }
+.epay-menu-root .el-menu > .el-menu-item.is-active { font-weight: 600; }
+.epay-menu-root .el-menu--inline > .el-menu-item { height: 42px; margin-bottom: 3px; }
+.epay-menu-root .el-icon:not(.el-sub-menu__icon-arrow) { margin-right: 12px; box-shadow: inset 0 1px #ffffff38; }
+.epay-menu-root .el-menu-item.is-active .el-icon { transform: scale(1.06); }
+
+/* 苹果系强调色：侧边栏图标保持单一蓝色，状态色仍由业务语义控制。 */
+.epay-menu-root .el-icon:not(.el-sub-menu__icon-arrow) {
+  color: var(--epay-blue) !important;
+  background: var(--epay-soft) !important;
+}
+
+.epay-menu-root .el-menu-item.is-active {
+  background: transparent !important;
+}
+
+.epay-menu-root .el-sub-menu__icon-arrow,
+.epay-menu-root .el-sub-menu__title > .el-sub-menu__icon-arrow {
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+  color: var(--epay-nav-muted) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+

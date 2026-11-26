@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""在 Compose 更新器容器中检查版本、升级中心和同步采集端。"""
+import argparse
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+import urllib.request
+
+ROOT = Path('/opt/epay')
+STATE = ROOT / 'state'
+REQUESTS = ROOT / 'requests'
+STATUS = STATE / 'release.json'
+VERSION = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+PROJECT = os.environ.get('EPAY_COMPOSE_PROJECT', 'epay-external')
+WORKER = ROOT / 'epayctl'
+COMPOSE = 'compose.pull.yaml'
+
+
+def atomic(path, data, mode=0o600):
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as f:
+        f.write(data)
+        os.fchmod(f.fileno(), mode)
+    os.replace(f.name, path)
+
+
+def status():
+    return json.loads(STATUS.read_text()) if STATUS.exists() else {}
+
+
+def record(**fields):
+    atomic(STATUS, json.dumps({**status(), **fields}, ensure_ascii=False).encode(), 0o644)
+
+
+def repo():
+    previous = ROOT / 'repository'
+    value = os.environ.get('EPAY_REPOSITORY') or (previous.read_text().strip() if previous.is_file() else 'likew1nd/allinpay')
+    if not re.fullmatch(r'[\w.-]+/[\w.-]+', value):
+        raise ValueError('GitHub 仓库名无效')
+    return value
+
+
+def update_region():
+    return status().get('region', os.environ.get('EPAY_UPDATE_REGION', 'global'))
+
+
+def set_region(value):
+    if value not in ('cn', 'global'):
+        raise ValueError('更新服务器无效')
+    if status().get('region') != value:
+        record(region=value, available={}, checked=None, checkError='')
+
+
+def regional_url(url):
+    return 'https://git.5588.la/' + url if update_region() == 'cn' else url
+
+
+def request(url, *, accept='application/vnd.github+json'):
+    auth_file = ROOT / 'github-token'
+    url = regional_url(url)
+    req = urllib.request.Request(url, headers={'User-Agent': 'epay-center', 'Accept': accept})
+    if url.startswith('https://api.github.com/') and auth_file.is_file():
+        token = auth_file.read_text().strip()
+        if token:
+            # 不向 GitHub 附件下载重定向的目标转发令牌。
+            req.add_unredirected_header('Authorization', 'Bearer ' + token)
+    return urllib.request.urlopen(req, timeout=45)
+
+
+def releases():
+    result = {}
+    page = 1
+    while len(result) < 2:
+        with request(f'https://api.github.com/repos/{repo()}/releases?per_page=100&page={page}') as response:
+            rows = json.load(response)
+        for row in rows:
+            if row['draft'] or row['prerelease']:
+                continue
+            match = re.fullmatch(r'(center|agent)-v(' + VERSION + ')', row['tag_name'])
+            if match:
+                kind, version = match.groups()
+                if kind not in result or newer(version, result[kind]['version']):
+                    result[kind] = {**row, 'version': version}
+        if len(rows) < 100:
+            break
+        page += 1
+    return result
+
+
+def newer(a, b):
+    return tuple(map(int, a.split('.'))) > tuple(map(int, (b or '0.0.0').split('.')))
+
+
+def fetch_asset(release, name, directory):
+    asset = next((a for a in release['assets'] if a['name'] == name), None)
+    if asset is None:
+        raise ValueError(f'正式版缺少附件 {name}')
+    url = f"https://github.com/{repo()}/releases/download/{release['tag_name']}/{name}"
+    if asset['browser_download_url'] != url or not re.fullmatch('sha256:[0-9a-f]{64}', asset.get('digest') or ''):
+        raise ValueError(f'无效发布附件 {name}')
+    path = directory / name
+    asset_id = asset['id']
+    if type(asset_id) is not int or asset_id <= 0:
+        raise ValueError(f'无效发布附件编号 {name}')
+    api_url = f'https://api.github.com/repos/{repo()}/releases/assets/{asset_id}'
+    with request(api_url, accept='application/octet-stream') as response, path.open('wb') as output:
+        shutil.copyfileobj(response, output)
+    with path.open('rb') as f:
+        digest = hashlib.file_digest(f, 'sha256').hexdigest()
+    if path.stat().st_size != asset['size'] or 'sha256:' + digest != asset['digest']:
+        raise ValueError(f'附件校验失败 {name}')
+    return path
+
+
+def catalog(rows):
+    available = {k: {field: v[field] for field in ('version', 'html_url', 'published_at')} for k, v in rows.items()}
+    record(region=update_region(), available=available, checked=dt.datetime.now(dt.timezone.utc).isoformat(), checkError='')
+
+
+def compose(directory, *args, **kwargs):
+    command = ['docker', 'compose', '--project-name', PROJECT, '--env-file', '/dev/null',
+               '-f', str(directory / COMPOSE)]
+    return subprocess.run(command + list(args), check=True, **kwargs)
+
+
+def setup():
+    for directory in [ROOT, STATE, REQUESTS, ROOT / 'agents', ROOT / 'releases', ROOT / 'backups']:
+        directory.mkdir(exist_ok=True)
+    os.chown(REQUESTS, 1000, 1000)
+    os.chmod(REQUESTS, 0o700)
+
+
+def save_backup(previous):
+    query = "SELECT COUNT(*) FROM transfer_request WHERE status IN ('PREPARING','CLAIMED')"
+    configuration = compose(
+        previous, 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'node', 'api', '-e',
+        "const fs = require('node:fs'); const file = '/run/epay-setup/installed.json'; "
+        "if (fs.existsSync(file)) process.stdout.write(fs.readFileSync(file));",
+        capture_output=True,
+    ).stdout
+    if not configuration:
+        return
+    url = urllib.parse.urlsplit(json.loads(configuration)['env']['DATABASE_URL'])
+    database = urllib.parse.unquote(url.path[1:])
+    mysql_args = ['--protocol=tcp', f'--host={url.hostname}', f'--port={url.port or 3306}',
+                  '--user=' + urllib.parse.unquote(url.username or '')]
+    env = {**os.environ, 'MYSQL_PWD': urllib.parse.unquote(url.password or '')}
+    run = ['run', '--rm', '--no-deps', '-T', '-e', 'MYSQL_PWD']
+    count = compose(previous, *run, '--entrypoint', 'mysql', 'mysql-tools', *mysql_args,
+                    '-N', '--database=' + database, '-e', query, env=env,
+                    capture_output=True, text=True).stdout.strip()
+    if count != '0':
+        raise RuntimeError('有采集端正在执行转账，已恢复原服务，请等待任务结束')
+
+    backup = ROOT / 'backups' / (previous.name + '-' + secrets.token_hex(4))
+    with tempfile.TemporaryDirectory(dir=backup.parent) as temporary:
+        directory = Path(temporary)
+        atomic(directory / 'setup.json', configuration)
+        with (directory / 'database.sql').open('wb') as output:
+            compose(previous, *run, 'mysql-tools', *mysql_args, '--single-transaction',
+                    '--no-tablespaces', '--set-gtid-purged=OFF', '--column-statistics=0',
+                    '--databases', database, env=env, stdout=output)
+        directory.rename(backup)
+    record(backup=str(backup))
+
+
+def center(release):
+    version = release['version']
+    old = status().get('current')
+    if not isinstance(old, str) or not re.fullmatch(VERSION, old):
+        raise RuntimeError('中心尚未记录当前版本，无法升级')
+    if not newer(version, old):
+        record(result='中心已是当前版本')
+        print('中心已是当前版本')
+        return
+
+    previous = ROOT / 'releases' / old
+    if not (previous / COMPOSE).is_file():
+        raise RuntimeError('缺少当前中心的 Compose 文件，无法备份并升级')
+    directory = ROOT / 'releases' / version
+    directory.mkdir(exist_ok=True)
+    for name in (COMPOSE, 'epayctl'):
+        fetch_asset(release, name, directory)
+    try:
+        compose(directory, 'pull', '--policy', 'missing', 'prepare', 'redis', 'api', 'web')
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('镜像拉取失败，请检查 Docker 到 GHCR 和 Docker Hub 的连接及镜像读取权限') from error
+
+    try:
+        compose(previous, 'stop', 'web', 'api')
+        save_backup(previous)
+    except Exception:
+        compose(previous, 'up', '-d', '--wait', '--no-build', 'web')
+        raise
+
+    # 更新器继续运行，避免 Compose 中途替换正在执行升级的容器。
+    compose(directory, 'up', '-d', '--wait', '--no-build', 'web')
+    atomic(WORKER, (directory / 'epayctl').read_bytes(), 0o755)
+    record(current=version, result='中心已启动')
+
+
+def agent(release):
+    version = release['version']
+    if not newer(version, status().get('agent')):
+        record(result='采集端已是当前版本')
+        return
+    base = ROOT / 'agents'
+    directory = base / version
+    directory.mkdir(exist_ok=True)
+    meta = json.loads(fetch_asset(release, 'version.json', directory).read_text())
+    minimum = meta.get('minCenterVersion')
+    if not isinstance(minimum, str) or not re.fullmatch(VERSION, minimum) or newer(minimum, status().get('current')):
+        raise ValueError('请先升级兼容的中心版本')
+    for name in ['bundle.zip', 'windows-agent.zip', 'windows-agent-repair.zip']:
+        fetch_asset(release, name, directory)
+    with (directory / 'bundle.zip').open('rb') as f:
+        if meta['version'] != version or meta['bundleHash'] != hashlib.file_digest(f, 'sha256').hexdigest():
+            raise ValueError('Agent 版本与脚本包不匹配')
+    link = base / '.pending'
+    link.unlink(missing_ok=True)
+    link.symlink_to(version, target_is_directory=True)
+    os.replace(link, base / 'current')
+    record(agent=version, agentError='')
+
+
+def sync_available_agent(rows):
+    release = rows.get('agent')
+    installed = status()
+    if not release or not installed.get('current') or not newer(release['version'], installed.get('agent')):
+        return
+    try:
+        agent(release)
+    except Exception as error:
+        record(agentError=str(error) if isinstance(error, ValueError) else '采集端版本同步失败，下次检查时重试')
+        print(f"采集端版本同步失败：{error}", file=sys.stderr)
+
+
+def daemon():
+    setup()
+    version = os.environ['EPAY_RELEASE_VERSION']
+    if not re.fullmatch(VERSION, version):
+        raise ValueError('Compose 中的中心版本号无效')
+    current = status().get('current')
+    if not current or newer(version, current):
+        directory = ROOT / 'releases' / version
+        directory.mkdir(exist_ok=True)
+        atomic(directory / COMPOSE, (Path('/usr/local/share/epay') / COMPOSE).read_bytes())
+        # 手动换用新版 Compose 时，镜像内的更新器已随版本更新。
+        WORKER.unlink(missing_ok=True)
+        record(current=version, region=update_region(), result='中心已启动')
+    next_check = 0
+    while True:
+        executable = WORKER if WORKER.is_file() else Path(__file__)
+        if any(REQUESTS.iterdir()):
+            subprocess.run([sys.executable, str(executable), 'worker'], check=False)
+        if time.monotonic() >= next_check:
+            subprocess.run([sys.executable, str(executable), 'check-update'], check=False)
+            next_check = time.monotonic() + 1800
+        time.sleep(2)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('action', choices=['status', 'check-update', 'update', 'sync-agent', 'worker', 'daemon', 'set-region'])
+    parser.add_argument('region', nargs='?', choices=['cn', 'global'])
+    args = parser.parse_args()
+    action = args.action
+    if (action == 'set-region') != (args.region is not None):
+        parser.error('set-region 需要指定 cn 或 global')
+    if action == 'daemon':
+        daemon()
+        return
+    if action == 'status':
+        print(json.dumps(status(), ensure_ascii=False, indent=2))
+        return
+    with (ROOT / 'update.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        setup()
+        if action == 'set-region':
+            set_region(args.region)
+            return
+        target = None
+        if action == 'worker':
+            paths = sorted(REQUESTS.iterdir())
+            selections = [p for p in paths if re.fullmatch(r'region-[0-9]{13}-[0-9]{24}-(cn|global)', p.name)]
+            if selections:
+                set_region(selections[-1].name.rsplit('-', 1)[1])
+                for path in selections:
+                    path.unlink()
+            for path in paths:
+                if path in selections:
+                    continue
+                match = re.fullmatch(r'(update|sync-agent)-(' + VERSION + ')|check-update', path.name)
+                path.unlink()
+                if match:
+                    action, target = match.group(1) or 'check-update', match.group(2)
+                    break
+            else:
+                if not selections:
+                    return
+                action = 'check-update'
+        try:
+            rows = releases()
+            catalog(rows)
+        except Exception:
+            record(checkError='版本检查失败，请检查所选更新服务器的网络连接与读取权限')
+            raise
+        if action == 'check-update':
+            sync_available_agent(rows)
+            print(json.dumps(status().get('available', {}), ensure_ascii=False))
+            return
+        kind = 'agent' if action == 'sync-agent' else 'center'
+        if kind not in rows:
+            sys.exit('尚无对应正式版')
+        release = rows[kind]
+        if target and target != release['version']:
+            record(result='可用版本已变化，请重新确认')
+            return
+        record(result='正在同步 ' + release['tag_name'])
+        try:
+            if kind == 'agent':
+                agent(release)
+                record(result='本站采集端版本已同步')
+            else:
+                center(release)
+                sync_available_agent(rows)
+        except Exception as error:
+            message = str(error) if isinstance(error, (RuntimeError, ValueError)) else '更新中断，请查看更新器容器日志和备份路径'
+            record(result=message)
+            raise
+
+
+if __name__ == '__main__':
+    main()

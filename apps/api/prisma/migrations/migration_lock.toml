@@ -1,0 +1,2 @@
+﻿# MySQL migration history for the Epay center database
+provider = "mysql"

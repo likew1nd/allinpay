@@ -1,0 +1,117 @@
+name: epay-external
+
+services:
+  prepare:
+    image: '@API_IMAGE@'
+    user: '0:0'
+    volumes:
+      - setup:/run/epay-setup
+      - redis-credentials:/run/redis-secret
+    command:
+      - node
+      - -e
+      - |
+        const fs = require('node:fs');
+        const { randomBytes } = require('node:crypto');
+        fs.chownSync('/run/epay-setup', 1000, 1000);
+        fs.chmodSync('/run/epay-setup', 0o700);
+        const file = '/run/redis-secret/password';
+        if (!fs.existsSync(file)) {
+          const temporary = file + '.tmp';
+          fs.writeFileSync(temporary, randomBytes(32).toString('hex'), { mode: 0o400 });
+          fs.chownSync(temporary, 1000, 1000);
+          fs.renameSync(temporary, file);
+        }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$(cat /run/redis-secret/password)"
+    volumes:
+      - redis:/data
+      - redis-credentials:/run/redis-secret:ro
+    depends_on:
+      prepare: { condition: service_completed_successfully }
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$(cat /run/redis-secret/password)" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: '@API_IMAGE@'
+    init: true
+    restart: unless-stopped
+    command: ['node', 'setup.cjs']
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      EPAY_SETUP_DIR: /run/epay-setup
+      EPAY_REDIS_PASSWORD_FILE: /run/redis-secret/password
+      APP_PORT: 9528
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      DEPLOY_STATE: /deploy
+    volumes:
+      - setup:/run/epay-setup
+      - redis-credentials:/run/redis-secret:ro
+      - release-state:/deploy/state:ro
+      - release-requests:/deploy/requests
+      - agent-bundles:/project/apps/api/script-bundles:ro
+    depends_on:
+      prepare: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:9528/v1/route/getConstantRoutes').then(r=>{if(!r.ok && r.status!==403)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  web:
+    image: '@WEB_IMAGE@'
+    restart: unless-stopped
+    ports: ['${EPAY_BIND:-127.0.0.1:8080}:80']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1/']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  updater:
+    image: '@UPDATER_IMAGE@'
+    restart: unless-stopped
+    depends_on:
+      web: { condition: service_healthy }
+    environment:
+      EPAY_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+      EPAY_UPDATE_REGION: ${EPAY_UPDATE_REGION:-global}
+      EPAY_RELEASE_VERSION: '@RELEASE_VERSION@'
+      EPAY_REPOSITORY: '@REPOSITORY@'
+      EPAY_BIND: ${EPAY_BIND:-127.0.0.1:8080}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - updater-data:/opt/epay
+      - release-state:/opt/epay/state
+      - release-requests:/opt/epay/requests
+      - agent-bundles:/opt/epay/agents
+
+  mysql-tools:
+    profiles: [maintenance]
+    image: mysql:8.4
+    entrypoint: [mysqldump]
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  setup:
+  redis:
+  redis-credentials:
+  updater-data:
+  release-state:
+  release-requests:
+  agent-bundles:

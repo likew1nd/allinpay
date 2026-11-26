@@ -1,0 +1,11 @@
+<svg width="100%" height="100%" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="senlin-brand-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#42a5ff"/>
+      <stop offset="1" stop-color="#007aff"/>
+    </linearGradient>
+  </defs>
+  <path d="M2 17 7 9l5 8v15H2z" fill="url(#senlin-brand-gradient)" opacity=".78"/>
+  <path d="m13 12 5-9 5 9v20H13z" fill="url(#senlin-brand-gradient)"/>
+  <path d="m24 17 5-8 5 8v15H24z" fill="url(#senlin-brand-gradient)" opacity=".9"/>
+</svg>
