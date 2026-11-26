@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { auditAdjustment } from './adjustment-audit';
 import { mapOrderStatus, summarizeOrderCounts } from '../site/order-mapping';
 import {
   describeRule,
@@ -61,6 +62,7 @@ export async function evaluateStrategyTarget(
   tx: Prisma.TransactionClient,
   id: string,
   simulation: boolean,
+  applicationAudit = false,
 ) {
   const initial = await tx.strategyTarget.findUnique({
     where: { id },
@@ -597,6 +599,7 @@ export async function evaluateStrategyTarget(
         : {}),
     },
   });
+  if (applicationAudit) await auditAdjustment(tx, adjustment.id, true);
   await tx.strategyTarget.update({
     where: { id: executionTarget.id },
     data: { lastTriggeredAt: now },

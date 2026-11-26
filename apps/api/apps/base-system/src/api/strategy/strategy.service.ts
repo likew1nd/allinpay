@@ -22,6 +22,7 @@ import { OperationLogProperties } from '@app/base-system/lib/bounded-contexts/lo
 
 import { SiteDataService } from '../site/site-data.service';
 import { AccountService } from '../account/account.service';
+import { finishPendingAdjustments, updateAdjustment } from './adjustment-audit';
 
 import {
   CreateStrategyGroupDto,
@@ -359,7 +360,7 @@ export class StrategyService {
         binding.group.currentVersion !== record.groupVersion ||
         !binding.group.configuration
       ) {
-        await this.prisma.adjustmentRecord.updateMany({
+        await finishPendingAdjustments(this.prisma, this.prisma.applicationAdjustmentAudit, {
           where: { id: record.id, status: 'PENDING' },
           data: {
             status: 'SKIPPED',
@@ -369,7 +370,7 @@ export class StrategyService {
         });
       }
     }
-    await this.prisma.adjustmentRecord.updateMany({
+    await finishPendingAdjustments(this.prisma, this.prisma.applicationAdjustmentAudit, {
       where: { siteId, status: 'PENDING', expiresAt: { lt: now } },
       data: {
         status: 'EXPIRED',
@@ -449,10 +450,7 @@ export class StrategyService {
       result.status !== 'SUCCEEDED' ||
       !record.strategyGroupId
     )
-      completed = await this.prisma.adjustmentRecord.update({
-        where: { id },
-        data: completionData,
-      });
+      completed = await updateAdjustment(this.prisma, this.prisma.applicationAdjustmentAudit, id, completionData);
     else {
       // A successfully added reserve becomes a controlled member. Failed/cancelled
       // additions never create phantom bindings or discard confirmed source results.
@@ -543,10 +541,7 @@ export class StrategyService {
               });
             }
           }
-          return tx.adjustmentRecord.update({
-            where: { id },
-            data: completionData,
-          });
+          return updateAdjustment(tx, this.prisma.applicationAdjustmentAudit, id, completionData);
         },
         { timeout: 20000 },
       );

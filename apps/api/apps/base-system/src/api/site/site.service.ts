@@ -19,6 +19,7 @@ import { CreateSiteDto } from './dto/create-site.dto';
 import { PageSitesDto } from './dto/page-sites.dto';
 import { UpdateSiteDto } from './dto/update-site.dto';
 import { encryptSiteSecret } from './site-credentials';
+import { finishPendingAdjustments } from '../strategy/adjustment-audit';
 
 @Injectable()
 export class SiteService {
@@ -246,7 +247,7 @@ export class SiteService {
         select: this.publicSelect,
       });
       if (paused) {
-        await tx.adjustmentRecord.updateMany({
+        await finishPendingAdjustments(tx, this.prisma.applicationAdjustmentAudit, {
           where: { siteId: id, status: 'PENDING' },
           data: { status: 'SKIPPED', failureReason: '站点已暂停自动调整，取消待执行指令', completedAt: new Date() },
         });

@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
+  applicationAdjustmentAudit = false;
   constructor() {
     // 只保留警告和错误；逐条 SQL 日志会让开发日志迅速膨胀
     super({
@@ -15,5 +16,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 
   async onModuleInit() {
     await this.$connect();
+    const writer = await this.systemSetting.findUnique({ where: { key: 'audit.adjustmentWriter' } });
+    this.applicationAdjustmentAudit = writer?.value === 'application';
   }
 }

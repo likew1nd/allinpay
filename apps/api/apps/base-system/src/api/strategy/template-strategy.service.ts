@@ -22,6 +22,7 @@ import {
   ruleConditions,
 } from './template-rules';
 import { channelRates, evaluateStrategyTarget } from './template-evaluation';
+import { finishPendingAdjustments } from './adjustment-audit';
 import { configurationFrom, newId, reserveChannelsFrom } from './template-strategy.shared';
 
 type GroupInput = {
@@ -790,7 +791,7 @@ export class TemplateStrategyService {
     reason: string,
   ) {
     if (ids.length)
-      await tx.adjustmentRecord.updateMany({
+      await finishPendingAdjustments(tx, this.prisma.applicationAdjustmentAudit, {
         where: { strategyGroupId: { in: ids }, status: 'PENDING' },
         data: {
           status: 'SKIPPED',
@@ -842,7 +843,7 @@ export class TemplateStrategyService {
   }
 
   private async evaluateTarget(id: string, simulation: boolean) {
-    return this.transaction((tx) => evaluateStrategyTarget(tx, id, simulation));
+    return this.transaction((tx) => evaluateStrategyTarget(tx, id, simulation, this.prisma.applicationAdjustmentAudit));
   }
 
   @Interval(30000)

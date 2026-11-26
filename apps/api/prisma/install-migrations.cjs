@@ -6,6 +6,8 @@ const mysql = require('mysql2/promise');
 
 const baseline = '00000000000000_mysql_baseline';
 const strategy = '202611020003_strategy_templates';
+const activity = '202611040001_system_activity_log';
+const applicationAudit = "INSERT INTO system_setting (setting_key, setting_value, updated_at) VALUES ('audit.adjustmentWriter', 'application', CURRENT_TIMESTAMP(3));";
 const notice = '202611241200_telegram_channel_status_template';
 const library = '202611241300_telegram_channel_notice_library';
 const file = (root, name) => join(root, 'migrations', name, 'migration.sql');
@@ -37,15 +39,31 @@ function mysql57Scripts(root) {
 }
 
 function knownFailure(row) {
-  if (row.finished_at || ![baseline, strategy].includes(row.migration_name)) return false;
+  if (row.finished_at || ![baseline, strategy, activity].includes(row.migration_name)) return false;
   const raw = readFileSync(file(__dirname, row.migration_name), 'utf8');
   const sql = raw.replace(/\r\n/g, '\n');
   const checksums = [raw, sql, sql.replace(/\n/g, '\r\n')].map(digest);
   if (!checksums.includes(row.checksum)) return false;
   const log = row.logs || '';
+  if (row.migration_name === activity) return /Database error code:\s*1419\b/.test(log) && /query number 4\b/.test(log);
   return row.migration_name === baseline ? (/1064/.test(log) && /JSON_ARRAY/i.test(log) && /query number 59\b/.test(log))
     || (/1067/.test(log) && /updated_at/.test(log) && /query number 1\b/.test(log))
     : /3780/.test(log) && /strategy_group_template_id_fkey/.test(log) && /query number 4\b/.test(log);
+}
+
+// 安装者切换过目标后，旧 pending 文件只记得最后一次提交。仅识别尚未创建用户、
+// 迁移历史精确停在已知 1419 位置的中心库，其他非空库仍由安装器拒绝。
+async function isInterruptedAuditInstall(db, database) {
+  const [required] = await db.execute("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME IN ('_prisma_migrations','sys_user')", [database]);
+  if (required.length !== 2) return false;
+  const [users] = await db.query('SELECT 1 FROM ??.sys_user LIMIT 1', [database]);
+  if (users.length) return false;
+  const [rows] = await db.query('SELECT migration_name, finished_at, rolled_back_at, checksum, logs FROM ??._prisma_migrations WHERE rolled_back_at IS NULL', [database]);
+  const failed = rows.filter(row => !row.finished_at);
+  if (failed.length !== 1 || failed[0].migration_name !== activity || !knownFailure(failed[0])) return false;
+  const completed = new Set(rows.filter(row => row.finished_at).map(row => row.migration_name));
+  const expected = readdirSync(join(__dirname, 'migrations'), { withFileTypes: true }).filter(entry => entry.isDirectory() && entry.name < activity);
+  return completed.size === expected.length && expected.every(entry => completed.has(entry.name));
 }
 
 async function alignPartialSchema(db, tables, name) {
@@ -87,20 +105,45 @@ async function deployMigrations(url, resumeInstall, prisma) {
     const [tables] = await db.query('SELECT TABLE_NAME AS name, TABLE_COLLATION AS collation FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()');
     let history = [];
     if (tables.some(t => t.name === '_prisma_migrations')) {
-      [history] = await db.query('SELECT migration_name, checksum, logs, rolled_back_at, finished_at FROM _prisma_migrations WHERE migration_name IN (?, ?) ORDER BY started_at', [baseline, strategy]);
+      [history] = await db.query('SELECT migration_name, checksum, logs, rolled_back_at, finished_at FROM _prisma_migrations WHERE migration_name IN (?, ?, ?) ORDER BY started_at', [baseline, strategy, activity]);
     }
     const repairs = history.filter(knownFailure);
-    if (!legacy && !repairs.length) return await prisma(['migrate', 'deploy']);
+    const activityDone = history.find(row => row.migration_name === activity && row.finished_at);
+    const originalActivity = readFileSync(file(__dirname, activity), 'utf8');
+    const triggerStart = originalActivity.indexOf('CREATE TRIGGER adjustment_audit_insert');
+    const backfill = originalActivity.indexOf('-- 历史调整');
+    if (triggerStart < 0 || backfill <= triggerStart) throw new Error('审计迁移文件结构异常');
+    const auditTail = applicationAudit + '\n\n' + originalActivity.slice(backfill);
+    const portableActivity = originalActivity.slice(0, triggerStart) + auditTail;
+    const useApplicationAudit = !activityDone || [digest(portableActivity), digest(auditTail)].includes(activityDone.checksum);
+    if (!legacy && !repairs.length && !useApplicationAudit) return await prisma(['migrate', 'deploy']);
     work = mkdtempSync(join(tmpdir(), 'epay-prisma-'));
     const schema = join(work, 'schema.prisma');
     copyFileSync(join(__dirname, 'schema.prisma'), schema);
     cpSync(join(__dirname, 'migrations'), join(work, 'migrations'), { recursive: true });
     if (legacy) mysql57Scripts(work);
+    if (useApplicationAudit) writeFileSync(file(work, activity), portableActivity);
     // Prisma 保留原失败记录；后续部署从同一记录重建当时实际执行的迁移文件。
     for (const name of new Set(repairs.map(r => r.migration_name))) {
       const row = repairs.filter(r => r.migration_name === name).at(-1);
       const path = file(work, name);
       const sql = readFileSync(path, 'utf8');
+      if (name === activity) {
+        if (!useApplicationAudit) continue;
+        const done = history.find(r => r.migration_name === name && r.finished_at);
+        if (done) {
+          if (done.checksum === digest(auditTail)) writeFileSync(path, auditTail);
+          continue;
+        }
+        if (!resumeInstall) continue;
+        const [columns] = await db.query("SHOW COLUMNS FROM sys_operation_log WHERE Field IN ('source','level','status','object_id','object_name','related_id')");
+        const [indexes] = await db.query("SHOW INDEX FROM sys_operation_log WHERE Key_name IN ('sys_operation_log_domain_end_time_id_idx','sys_operation_log_domain_source_level_end_time_idx')");
+        const [triggers] = await db.query("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('adjustment_audit_insert','adjustment_audit_update')");
+        if (columns.length !== 6 || new Set(indexes.map(i => i.Key_name)).size !== 2 || triggers.length) throw new Error('审计表结构与 1419 中断位置不一致，已保留现有数据。');
+        writeFileSync(path, auditTail);
+        if (!row.rolled_back_at) await prisma(['migrate', 'resolve', '--rolled-back', name, '--schema', schema]);
+        continue;
+      }
       const marker = name === baseline ? 'CREATE TABLE `epay_sync_run`' : 'ALTER TABLE `strategy_group` ADD CONSTRAINT `strategy_group_template_id_fkey`';
       const firstStatement = name === baseline && /query number 1\b/.test(row.logs);
       const start = firstStatement ? 0 : sql.indexOf(marker);
@@ -132,4 +175,4 @@ async function deployMigrations(url, resumeInstall, prisma) {
   }
 }
 
-module.exports = { deployMigrations };
+module.exports = { deployMigrations, isInterruptedAuditInstall };

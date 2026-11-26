@@ -6,7 +6,7 @@ const { isIP } = require('node:net');
 const { join } = require('node:path');
 const { domainToASCII } = require('node:url');
 const mysql = require('mysql2/promise');
-const { deployMigrations } = require('./prisma/install-migrations.cjs');
+const { deployMigrations, isInterruptedAuditInstall } = require('./prisma/install-migrations.cjs');
 
 const setupPath = '/v1/install';
 const healthPath = '/v1/route/getConstantRoutes';
@@ -65,6 +65,7 @@ async function install(input) {
   const target = JSON.stringify([host.toLowerCase(), port, database]);
   const pending = readState(pendingFile);
   const resuming = pending?.target === target;
+  let recoverMigration = resuming;
   let connection;
   try {
     connection = await mysql.createConnection({ host, port, user: username, password, connectTimeout: 5000 });
@@ -73,7 +74,10 @@ async function install(input) {
       await connection.query('CREATE DATABASE ?? CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', [database]);
     }
     const [tables] = await connection.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? LIMIT 1', [database]);
-    if (tables.length && !resuming) throw new Error('请选择一个专用空数据库，安装程序只初始化该库。');
+    if (tables.length && !resuming) {
+      recoverMigration = Boolean(pending) && await isInterruptedAuditInstall(connection, database);
+      if (!recoverMigration) throw new Error('请选择一个专用空数据库，安装程序只初始化该库。');
+    }
     if (!tables.length && schemata.length && schemata[0].DEFAULT_COLLATION_NAME !== 'utf8mb4_unicode_ci') {
       await connection.query('ALTER DATABASE ?? CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', [database]);
     }
@@ -100,7 +104,7 @@ async function install(input) {
     DIRECT_DATABASE_URL: url,
   };
   writeState(pendingFile, { target, env });
-  await migrate(env, resuming);
+  await migrate(env, recoverMigration);
   await runNode(['-r', 'ts-node/register', '-r', 'tsconfig-paths/register', 'prisma/seeds/index.ts'], {
     ...env, INITIAL_ADMIN_USERNAME: adminUsername, INITIAL_ADMIN_PASSWORD: adminPassword,
   }, '管理员初始化失败。请检查 API 容器日志后重试。');
