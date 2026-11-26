@@ -94,6 +94,7 @@ export class SiteDataService {
           windowEnd: end,
           mappingVersion: ORDER_MAPPING,
           expectedCount: dto.expectedCount,
+          pages: [],
           metadata: JSON.parse(
             JSON.stringify({
               channels: dto.channels,

@@ -6,6 +6,7 @@ const { isIP } = require('node:net');
 const { join } = require('node:path');
 const { domainToASCII } = require('node:url');
 const mysql = require('mysql2/promise');
+const { deployMigrations } = require('./prisma/install-migrations.cjs');
 
 const setupPath = '/v1/install';
 const healthPath = '/v1/route/getConstantRoutes';
@@ -31,9 +32,9 @@ function runNode(args, env, failure) {
   });
 }
 
-function migrate(env) {
-  return runNode(['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env,
-    '建表失败。请检查 MySQL 用户的建表权限和 API 容器日志，再重试。');
+function migrate(env, resumeInstall = false) {
+  return deployMigrations(env.DATABASE_URL, resumeInstall, args =>
+    runNode(['node_modules/prisma/build/index.js', ...args], env, '数据库迁移失败。具体错误已写入 API 容器日志。'));
 }
 
 function validate(input) {
@@ -67,12 +68,15 @@ async function install(input) {
   let connection;
   try {
     connection = await mysql.createConnection({ host, port, user: username, password, connectTimeout: 5000 });
-    const [schemata] = await connection.execute('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [database]);
+    const [schemata] = await connection.execute('SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [database]);
     if (!schemata.length) {
       await connection.query('CREATE DATABASE ?? CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', [database]);
     }
     const [tables] = await connection.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? LIMIT 1', [database]);
     if (tables.length && !resuming) throw new Error('请选择一个专用空数据库，安装程序只初始化该库。');
+    if (!tables.length && schemata.length && schemata[0].DEFAULT_COLLATION_NAME !== 'utf8mb4_unicode_ci') {
+      await connection.query('ALTER DATABASE ?? CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', [database]);
+    }
   } catch (error) {
     if (!error.code) throw error;
     const messages = {
@@ -96,7 +100,7 @@ async function install(input) {
     DIRECT_DATABASE_URL: url,
   };
   writeState(pendingFile, { target, env });
-  await migrate(env);
+  await migrate(env, resuming);
   await runNode(['-r', 'ts-node/register', '-r', 'tsconfig-paths/register', 'prisma/seeds/index.ts'], {
     ...env, INITIAL_ADMIN_USERNAME: adminUsername, INITIAL_ADMIN_PASSWORD: adminPassword,
   }, '管理员初始化失败。请检查 API 容器日志后重试。');

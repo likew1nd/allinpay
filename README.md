@@ -28,7 +28,7 @@ curl -fsSL https://github.com/likew1nd/allinpay/releases/latest/download/compose
 docker logs epay-external-api-1
 ```
 
-打开 `http://127.0.0.1:8080`，从 API 容器日志复制一次性安装码，在网页向导填写已有 MySQL 的连接信息和管理员账号。MySQL 需要提供一个专用空库，以及初始化和运行所需的权限。连接地址须能从 API 容器访问。
+打开 `http://127.0.0.1:8080`，从 API 容器日志复制一次性安装码，在网页向导填写已有 MySQL 的连接信息和管理员账号。安装向导支持 MySQL 5.7.44 和 8.4。填写自选名称的专用空库，安装器会准备所需字符集和排序规则。账号需要该库的建表、修改表、外键、触发器和数据读写权限。连接地址须能从 API 容器访问。
 
 中心默认监听 `127.0.0.1:8080`。可通过 `EPAY_BIND` 自定义监听地址和端口。安装配置和 Redis 数据保存在 Compose 命名卷中，重建容器时应沿用原项目名和数据卷。
 

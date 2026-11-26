@@ -22,7 +22,13 @@ const json = (value: unknown) => value as Prisma.InputJsonValue;
 @Injectable()
 export class TelegramService {
   constructor(private readonly prisma: PrismaService, private readonly transport: TelegramTransportService, private readonly auth: TelegramAuthService) {}
-  async bot() { return this.prisma.telegramBot.upsert({ where: { id: 'default' }, create: { id: 'default', channelStatusNoticeTemplate: channelCardTemplate }, update: {} }); }
+  async bot() {
+    return this.prisma.telegramBot.upsert({
+      where: { id: 'default' },
+      create: { id: 'default', channelStatusNoticeTemplate: channelCardTemplate, channelStatusNoticeSavedTemplates: '[]' },
+      update: {},
+    });
+  }
   async config() {
     const { tokenEncrypted, leaseOwner, leaseUntil, nextUpdateOffset, ...row } = await this.bot();
     return { ...row, hasToken: !!tokenEncrypted, state: !tokenEncrypted ? 'UNCONFIGURED' : !row.enabled ? 'DISABLED' : row.lastError ? 'ERROR' : leaseUntil && leaseUntil > new Date() ? 'RUNNING' : 'CONNECTING', eventTypes: EVENT_LABELS };
