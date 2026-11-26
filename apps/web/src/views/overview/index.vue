@@ -7,7 +7,8 @@ import { useRefreshInterval } from '@/hooks/common/refresh-interval';
 import { useUITable } from '@/hooks/common/table';
 import { fetchAdjustments, fetchAllSiteOrderStatistics, fetchCollectorStatistics, fetchSiteDataList } from '@/service/api';
 import type { AdjustmentRecord, CollectorStatistics, OrderListStatistics, SiteDataRecord, SiteListStatistics } from '@/service/api';
-import EpaySegments from '@/components/custom/epay-segments.vue';
+import EpaySearchFields from '@/components/custom/epay-search-fields.vue';
+import { useTableQuery } from '@/hooks/common/table-query';
 import SiteCollectionCards from '@/views/site-management/modules/site-collection-cards.vue';
 import SiteDetailsDialog from '@/views/site-management/modules/site-details-dialog.vue';
 import SiteNameCell from '@/views/site-management/modules/site-name-cell.vue';
@@ -30,6 +31,12 @@ const refreshedAt = ref('');
 const failed = ref(false);
 const filter = ref('all');
 const search = ref('');
+const { query: siteQuery, applyQuery: searchSites } = useTableQuery(() => ({ filter: filter.value, keyword: search.value.trim().toLowerCase() }));
+function resetSites() {
+  filter.value = 'all';
+  search.value = '';
+  searchSites();
+}
 const detailVisible = ref(false);
 const detailSiteId = ref('');
 const { seconds: refreshSeconds } = useRefreshInterval();
@@ -69,9 +76,9 @@ function syncLabel(site: SiteDataRecord) {
 const exceptions = computed(() => sites.value.filter(site => site.connectionStatus !== 'ONLINE' || syncLabel(site) !== '正常'));
 const pausedCount = computed(() => sites.value.filter(site => site.automationPaused).length);
 const filteredSites = computed(() => {
-  const rows = filter.value === 'exceptions' ? exceptions.value : sites.value;
-  const keyword = search.value.trim().toLowerCase();
-  return rows.filter(site => (filter.value !== 'paused' || site.automationPaused) && `${site.name} ${site.baseUrl}`.toLowerCase().includes(keyword));
+  const rows = siteQuery.value.filter === 'exceptions' ? exceptions.value : sites.value;
+  const keyword = siteQuery.value.keyword;
+  return rows.filter(site => (siteQuery.value.filter !== 'paused' || site.automationPaused) && `${site.name} ${site.baseUrl}`.toLowerCase().includes(keyword));
 });
 const rankedSites = computed(() => sites.value.filter(site => site.summary?.lastSyncAt)
   .sort((a, b) => b.summary!.orderCount - a.summary!.orderCount).slice(0, 8));
@@ -139,13 +146,23 @@ function openSite(id: string) {
         <h2>站点经营明细</h2>
         <ElButton link type="primary" @click="router.push('/site-management/data')">全部站点 →</ElButton>
       </div>
-      <div class="epay-site-toolbar">
-        <EpaySegments v-model="filter" label="站点筛选" :options="[
-          { value: 'all', label: '全部', count: refreshedAt ? sites.length : undefined },
-          { value: 'exceptions', label: '需关注', count: refreshedAt ? exceptions.length : undefined },
-          { value: 'paused', label: '自动调整已停', count: refreshedAt ? pausedCount : undefined }
-        ]" />
-        <ElInput v-model="search" placeholder="搜索站点名称或域名" aria-label="搜索站点名称或域名" clearable class="epay-site-search" />
+      <div class="epay-table-toolbar epay-overview-filters">
+        <EpaySearchFields
+          :fields="[{ key: 'keyword', width: 210, value: search }, { key: 'scope', width: 155, value: filter === 'all' ? '' : filter }]"
+          @search="searchSites"
+          @reset="resetSites"
+        >
+          <template #keyword>
+            <ElInput v-model="search" placeholder="搜索站点名称或域名" aria-label="搜索站点名称或域名" clearable />
+          </template>
+          <template #scope>
+            <ElSelect v-model="filter" aria-label="站点范围" placeholder="站点范围">
+              <ElOption value="all" :label="refreshedAt ? `全部站点（${sites.length}）` : '全部站点'" />
+              <ElOption value="exceptions" :label="refreshedAt ? `需关注（${exceptions.length}）` : '需关注'" />
+              <ElOption value="paused" :label="refreshedAt ? `自动调整已停（${pausedCount}）` : '自动调整已停'" />
+            </ElSelect>
+          </template>
+        </EpaySearchFields>
       </div>
       <ElTable v-loading="loading" :data="filteredSites" row-key="id" :empty-text="refreshedAt ? '暂无符合条件的站点' : emptyLabel" max-height="520">
         <ElTableColumn label="站点" min-width="210">

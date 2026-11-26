@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpaySearchFields from '@/components/custom/epay-search-fields.vue';
 import { onMounted, ref } from 'vue';
 import { fetchNotificationIncidents, acknowledgeNotification } from '@/service/api/telegram';
 import type { NotificationIncident } from '@/service/api/telegram';
@@ -10,17 +11,23 @@ import StrategyEvidence from './modules/strategy-evidence.vue';
 const { hasAuth } = useAuth();
 const tab = ref(hasAuth('notification:read') ? 'incidents' : 'strategy');
 const status = ref('OPEN');
+const appliedStatus = ref('OPEN');
+function resetFilters() {
+  status.value = 'OPEN';
+  return getDataByPage();
+}
 const acknowledging = ref(false);
 const { data: rows, loading, getData: load, refreshData, getDataByPage, pagination } = useUIPaginatedTable<
   Awaited<ReturnType<typeof fetchNotificationIncidents>> | null,
   NotificationIncident
 >({
   immediate: false,
+  onSearch: () => { appliedStatus.value = status.value; },
   columns: () => [],
   paginationProps: { pageSize: 20 },
   api: async (): Promise<Awaited<ReturnType<typeof fetchNotificationIncidents>> | null> => {
     if (!hasAuth('notification:read')) return null;
-    return fetchNotificationIncidents({ current: pagination.currentPage ?? 1, size: 20, status: status.value || undefined });
+    return fetchNotificationIncidents({ current: pagination.currentPage ?? 1, size: 20, status: appliedStatus.value || undefined });
   },
   transform: (result): { data: NotificationIncident[]; total: number; pageNum: number; pageSize: number } => ({
     data: result?.data?.records ?? [],
@@ -50,9 +57,11 @@ useAutoRefresh(refreshData, undefined, () => tab.value === 'incidents' && hasAut
       <ElTabs v-model="tab"><ElTabPane label="业务异常" name="incidents">
       <ElEmpty v-if="!hasAuth('notification:read')" description="暂无通知查看权限" />
       <template v-else>
-        <div class="mb-16px flex flex-wrap gap-8px">
-          <ElSelect v-model="status" class="w-160px" @change="getDataByPage()"><ElOption label="当前异常" value="OPEN" /><ElOption label="全部事件" value="" /></ElSelect>
-        </div>
+        <EpaySearchFields @search="getDataByPage()" @reset="resetFilters">
+          <ElSelect v-model="status" placeholder="全部事件" aria-label="事件范围">
+            <ElOption label="当前异常" value="OPEN" /><ElOption label="全部事件" value="" />
+          </ElSelect>
+        </EpaySearchFields>
         <ElTable v-loading="loading" :data="rows" row-key="id" border>
           <ElTableColumn prop="entityType" label="来源类型" min-width="130" />
           <ElTableColumn prop="title" label="事件" min-width="180" />

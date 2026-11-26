@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -88,17 +89,14 @@ function onTestCreated() {
   <div class="flex-col-stretch gap-16px">
     <ElCard class="epay-table-card card-wrapper">
       <div class="epay-table-toolbar">
-        <ElForm inline @submit.prevent="getDataByPage()">
-          <ElFormItem label="账号 / 环境"><ElInput v-model.trim="search.keyword" clearable @clear="getDataByPage()" /></ElFormItem>
-          <ElFormItem><ElButton type="primary" plain @click="getDataByPage()">查询</ElButton></ElFormItem>
-        </ElForm>
-        <TableHeaderOperation v-model:columns="columnChecks" hide-add hide-delete :loading="loading">
+        <EpayKeywordSearch v-model="search.keyword" placeholder="账号 / 环境" @search="getDataByPage()" />
+        <TableHeaderOperation hide-add hide-delete :loading="loading">
           <ElButton v-if="hasAuth('transfer-rule:read')" @click="router.push('/fund-management/transfer-strategies')">转账策略</ElButton>
           <ElButton @click="selected = null; recordsVisible = true">全部转账记录</ElButton>
         </TableHeaderOperation>
       </div>
       <ElTable v-loading="loading" :data="data" row-key="id">
-        <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
         <template #empty>暂无自动转账环境，请先在环境列表开启开关</template>
       </ElTable>
       <div class="mt-20px flex justify-end">

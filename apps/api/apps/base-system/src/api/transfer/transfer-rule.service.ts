@@ -28,7 +28,7 @@ export class TransferRuleService {
    * 弹窗和真正的删除共用这一份判断。
    */
   private async inspect(db: RuleDb, id: string) {
-    const rule = await db.transferRule.findUnique({ where: { id }, select: { id: true, name: true, deletedAt: true } });
+    const rule = await db.transferRule.findUnique({ where: { id }, select: { id: true, name: true, isTemplate: true, deletedAt: true } });
     if (!rule || rule.deletedAt) throw new NotFoundException('转账策略不存在');
     const [accounts, running] = await Promise.all([
       db.account.findMany({ where: { transferRuleId: id }, select: { id: true, name: true, externalId: true, transferEnabled: true }, orderBy: { id: 'asc' } }),
@@ -48,7 +48,7 @@ export class TransferRuleService {
         title: `有 ${running.length} 笔该策略的转账正在执行，请等待完成后再删除`,
         items: running.map(row => ({ id: row.id, label: row.outBizNo, hint: `付款环境：${row.account?.name || row.account?.externalId || '—'}` })),
       },
-    ], ['该策略待领取的转账单会作废', '历史转账记录会保留，仍显示该策略的名称']);
+    ], rule.isTemplate ? ['已应用此模板的策略会保留各自的配置'] : ['该策略待领取的转账单会作废', '历史转账记录会保留，仍显示该策略的名称']);
   }
 
   async deleteCheck(id: string) {
@@ -124,6 +124,17 @@ export class TransferRuleService {
       feeBuffer: dto.feeBuffer, minAmount: dto.minAmount, maxAmount: dto.maxAmount, dailyLimit: dto.dailyLimit ?? null,
       allocations: dto.allocations as unknown as Prisma.InputJsonValue, enabled: dto.enabled ?? true,
       isTemplate: dto.isTemplate ?? false, mode: 'AUTO' };
+  }
+
+  async renameTemplate(id: string, name: string, actor: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException('模板名称不能为空');
+    const { count } = await this.prisma.transferRule.updateMany({
+      where: { id, isTemplate: true, deletedAt: null },
+      data: { name: trimmed, updatedBy: actor, version: { increment: 1 } },
+    });
+    if (!count) throw new NotFoundException('转账模板不存在');
+    return { id, name: trimmed };
   }
 
   async createDraft(dto: CreateTransferDraftDto, actor: string) {

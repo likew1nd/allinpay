@@ -118,18 +118,18 @@ const { columns, columnChecks, data, loading, getData, getDataByPage, refreshDat
     columns: (): UI.TableColumn<SiteChannel>[] => [
       ...(!props.siteId
         ? [{
-            prop: 'siteName', label: $t('page.site.name'), minWidth: 190, fixed: 'left',
+            prop: 'siteName', label: $t('page.site.name'), minWidth: 190, fixed: pinIdentity.value ? 'left' : false,
             formatter: (row: SiteChannel) => (
               <SiteNameCell name={row.siteName ?? row.siteId} baseUrl={row.siteBaseUrl ?? ''} to={orderRoute(row.siteId)} />
             )
           }]
         : []),
-      { prop: 'code', label: '编号', width: 52, fixed: 'left', align: 'center', showOverflowTooltip: true },
+      { prop: 'code', label: '编号', width: 52, fixed: pinIdentity.value ? 'left' : false, align: 'center', showOverflowTooltip: true },
       {
         prop: 'name',
         label: '通道名',
         minWidth: 164,
-        fixed: 'left',
+        fixed: pinIdentity.value ? 'left' : false,
         formatter: row => {
           const type = row.channelType || row.details?.paymentTypeCode || '未知支付方式';
           const logo = logos[row.details?.paymentTypeCode ?? ''];
@@ -305,7 +305,7 @@ const { columns, columnChecks, data, loading, getData, getDataByPage, refreshDat
         label: '状态',
         width: 88,
         align: 'center',
-        fixed: 'right',
+        fixed: pinActions.value ? 'right' : false,
         formatter: row => (
           <ElTooltip content={statusHint(row)}>
             <EpayStatusSwitch
@@ -322,7 +322,7 @@ const { columns, columnChecks, data, loading, getData, getDataByPage, refreshDat
         prop: 'operate',
         label: '操作',
         width: 174,
-        fixed: 'right',
+        fixed: pinActions.value ? 'right' : false,
         formatter: row => (
           <ElSpace size={6}>
             {hasAuth('site:update') && (
@@ -414,32 +414,25 @@ defineExpose({ refresh });
     />
     <component :is="siteId ? 'div' : ElCard" :class="siteId ? undefined : 'epay-table-card card-wrapper'">
       <div class="epay-table-toolbar">
-        <ElForm class="epay-table-search" inline @submit.prevent="getDataByPage()">
-          <EpaySearchFields :values="[search.status]">
-            <ElFormItem label="通道名 / 编号"><ElInput v-model="search.keyword" clearable /></ElFormItem>
-            <template #actions>
-              <ElButton type="primary" native-type="submit">{{ $t('common.search') }}</ElButton>
-              <ElButton @click="reset">{{ $t('common.reset') }}</ElButton>
-            </template>
-            <template #advanced>
-              <ElFormItem label="收款可用性">
-                <ElSelect v-model="search.status" clearable class="w-160px">
-                  <ElOption label="可用" value="ENABLED" />
-                  <ElOption label="不可用（含日限额）" value="DISABLED" />
-                  <ElOption label="未知" value="UNKNOWN" />
-                </ElSelect>
-              </ElFormItem>
-            </template>
-          </EpaySearchFields>
-        </ElForm>
-        <div class="epay-table-actions">
-          <TableHeaderOperation
-            v-model:columns="columnChecks"
-            hide-add
-            hide-delete
-            :loading="loading"
-          />
-        </div>
+        <EpaySearchFields
+          :fields="[
+            { key: 'keyword', width: 180, value: search.keyword },
+            { key: 'status', width: 150, value: search.status }
+          ]"
+          @search="getDataByPage()"
+          @reset="reset"
+        >
+          <template #keyword>
+            <ElInput v-model="search.keyword" clearable placeholder="通道名 / 编号" aria-label="通道名 / 编号" />
+          </template>
+          <template #status>
+            <ElSelect v-model="search.status" clearable placeholder="收款可用性" aria-label="收款可用性">
+              <ElOption label="可用" value="ENABLED" />
+              <ElOption label="不可用（含日限额）" value="DISABLED" />
+              <ElOption label="未知" value="UNKNOWN" />
+            </ElSelect>
+          </template>
+        </EpaySearchFields>
       </div>
       <p class="mb-12px text-12px opacity-75">
         通道修改将同步写入原站点。状态按钮可点击切换启停；达到日限额的通道仍受原站点限制。
@@ -454,12 +447,7 @@ defineExpose({ refresh });
         scrollbar-always-on
         :empty-text="$t('page.site.noSyncRows')"
       >
-        <ElTableColumn
-          v-for="column in columns"
-          :key="column.prop"
-          v-bind="column"
-          :fixed="column.fixed === 'left' ? pinIdentity : column.fixed === 'right' && pinActions ? 'right' : false"
-        />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
       </ElTable>
       <div class="mt-20px flex justify-end">
         <ElPagination

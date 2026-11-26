@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { useTableSelection } from '@/hooks/common/table-selection';
 import { computed, onActivated, onDeactivated, onMounted, ref } from 'vue';
@@ -414,17 +415,9 @@ useAutoRefresh(refreshData, undefined, canAutoRefresh);
     />
     <ElCard class="epay-table-card card-wrapper">
       <div class="epay-table-toolbar">
-        <ElForm class="epay-table-search" inline :disabled="modeBusy" @submit.prevent="!modeBusy && getDataByPage()">
-          <ElFormItem :label="$t('page.collector.environmentKeyword')">
-            <ElInput v-model.trim="search.keyword" clearable @clear="!modeBusy && getDataByPage()" />
-          </ElFormItem>
-          <ElFormItem>
-            <ElButton type="primary" plain @click="getDataByPage()">{{ $t('common.search') }}</ElButton>
-          </ElFormItem>
-        </ElForm>
+        <EpayKeywordSearch v-model="search.keyword" :placeholder="$t('page.collector.environmentKeyword')" :disabled="modeBusy" @search="getDataByPage()" />
         <div class="epay-table-actions">
           <TableHeaderOperation
-            v-model:columns="columnChecks"
             hide-add
             hide-delete
             :loading="loading"
@@ -447,12 +440,7 @@ useAutoRefresh(refreshData, undefined, canAutoRefresh);
           width="50"
           :fixed="appStore.isMobile ? false : 'left'"
         />
-        <ElTableColumn
-          v-for="col in columns"
-          :key="col.prop"
-          v-bind="col"
-          :fixed="appStore.isMobile ? false : col.fixed"
-        />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" :unpin="appStore.isMobile" />
       </ElTable>
       <div class="mt-20px flex justify-end">
         <ElPagination

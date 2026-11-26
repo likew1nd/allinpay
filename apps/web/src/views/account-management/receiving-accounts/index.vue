@@ -16,7 +16,7 @@ const togglingIds = ref(new Set<string>());
 const deleteVisible = ref(false);
 const deleteTarget = ref({ id: '', name: '' });
 
-const { columns, data, getData, getDataByPage, loading, mobilePagination, refreshData } = useUIPaginatedTable({
+const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination, refreshData } = useUIPaginatedTable({
   paginationProps: { currentPage: 1, pageSize: 20, pageSizes: [20, 50, 100] },
   api: () => fetchPayees(searchParams.value),
   isResponseValid: response => !response.error,
@@ -115,7 +115,7 @@ useAutoRefresh(refreshData, undefined, () => !drawerVisible.value && !togglingId
       </div>
       <div class="min-w-0">
         <ElTable v-loading="loading" border :data="data" row-key="id">
-          <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
+          <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
         </ElTable>
       </div>
       <div class="mt-20px flex justify-end">

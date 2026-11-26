@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import EpaySearchFields from '@/components/custom/epay-search-fields.vue';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { ref } from 'vue';
@@ -32,7 +33,7 @@ const statusTypes: Partial<Record<TransferStatus, 'warning' | 'success'>> = {
   NEEDS_MANUAL: 'warning',
   SUCCEEDED: 'success'
 };
-const { columns, data, getData, refreshData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
+const { columns, columnChecks, data, getData, refreshData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
   onSearch: applyQuery,
   api: () =>
     fetchTransferRequests({
@@ -211,25 +212,20 @@ async function submit() {
   }
 }
 useAutoRefresh(refreshData, undefined, () => !drawer.value && !saving.value && !busyId.value && !logsVisible.value);
+function resetFilters() {
+  search.value.status = '';
+  return getDataByPage();
+}
 </script>
 
 <template>
   <ElCard class="epay-table-card card-wrapper">
     <div class="epay-table-toolbar">
-      <ElForm class="epay-table-search" inline @submit.prevent>
-        <ElFormItem label="转账状态">
-          <ElSelect
-            v-model="search.status"
-            clearable
-            placeholder="全部状态"
-            aria-label="转账状态"
-            class="w-160px"
-            @change="getDataByPage()"
-          >
-            <ElOption v-for="(label, status) in labels" :key="status" :value="status" :label="label" />
-          </ElSelect>
-        </ElFormItem>
-      </ElForm>
+      <EpaySearchFields @search="getDataByPage()" @reset="resetFilters">
+        <ElSelect v-model="search.status" clearable placeholder="全部转账状态" aria-label="转账状态">
+          <ElOption v-for="(label, status) in labels" :key="status" :value="status" :label="label" />
+        </ElSelect>
+      </EpaySearchFields>
     </div>
 
     <ElAlert
@@ -240,7 +236,7 @@ useAutoRefresh(refreshData, undefined, () => !drawer.value && !saving.value && !
       title="结果未知或待人工处理时，请先核对支付平台真实流水，再标记结果，切勿重复付款。"
     />
     <ElTable v-loading="loading" :data="data" row-key="id" border>
-      <ElTableColumn v-for="column in columns" :key="column.prop" v-bind="column" />
+      <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
     </ElTable>
     <div class="mt-16px flex justify-end">
       <ElPagination

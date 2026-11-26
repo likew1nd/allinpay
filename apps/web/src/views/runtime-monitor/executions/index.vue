@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpaySearchFields from '@/components/custom/epay-search-fields.vue';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { useUITable } from '@/hooks/common/table';
@@ -22,7 +23,7 @@ const table = ref<TableInstance>();
 const current = ref(1);
 const size = ref(20);
 const total = ref(0);
-const filters = reactive({
+const initialFilters = () => ({
   username: '',
   source: '',
   levels: [] as string[],
@@ -31,6 +32,7 @@ const filters = reactive({
   startAt: '',
   endAt: ''
 });
+const filters = reactive(initialFilters());
 const levelOptions = [
   { label: '普通记录', value: 'INFO' },
   { label: '需要关注', value: 'WARN' },
@@ -66,6 +68,10 @@ function search() {
   current.value = 1;
   load();
 }
+function resetFilters() {
+  Object.assign(filters, initialFilters());
+  search();
+}
 function resultType(status: string) {
   if (status === 'SUCCEEDED') return 'success';
   if (status === 'FAILED') return 'danger';
@@ -80,76 +86,93 @@ useAutoRefresh(refreshData);
     <p class="mb-16px text-sm text-[var(--el-text-color-secondary)]">
       查看谁在什么站点、针对哪个策略做了什么，以及原本值、本次设置和执行结果。展开可查看全部改动。
     </p>
-    <div class="mb-16px flex flex-wrap items-center gap-12px">
-      <ElSelect
-        v-model="filters.source"
-        clearable
-        placeholder="操作来源"
-        aria-label="操作来源"
-        class="w-140px lt-sm:w-full"
-      >
-        <ElOption label="人工操作" value="USER" />
-        <ElOption label="系统自动" value="SYSTEM" />
-      </ElSelect>
-      <ElInput
-        v-model="filters.username"
-        clearable
-        placeholder="操作账号"
-        aria-label="操作账号"
-        class="w-160px lt-sm:w-full"
-        @keyup.enter="search"
-      />
-      <ElSelect
-        v-model="filters.levels"
-        multiple
-        collapse-tags
-        clearable
-        placeholder="日志级别"
-        aria-label="日志级别"
-        class="w-180px lt-sm:w-full"
-      >
-        <ElOption v-for="item in levelOptions" :key="item.value" :label="item.label" :value="item.value" />
-      </ElSelect>
-      <ElSelect
-        v-model="filters.status"
-        clearable
-        placeholder="执行结果"
-        aria-label="执行结果"
-        class="w-140px lt-sm:w-full"
-      >
-        <ElOption label="成功" value="SUCCEEDED" />
-        <ElOption label="失败" value="FAILED" />
-        <ElOption label="等待执行" value="PENDING" />
-        <ElOption label="已跳过" value="SKIPPED" />
-        <ElOption label="已过期" value="EXPIRED" />
-        <ElOption label="结果未知" value="UNKNOWN" />
-      </ElSelect>
-      <ElInput
-        v-model="filters.keyword"
-        clearable
-        placeholder="操作人、站点、策略或操作内容"
-        aria-label="日志关键词"
-        class="w-260px lt-sm:w-full"
-        @keyup.enter="search"
-      />
-      <ElDatePicker
-        v-model="filters.startAt"
-        type="datetime"
-        value-format="YYYY-MM-DDTHH:mm:ss"
-        placeholder="开始时间"
-        aria-label="开始时间"
-        class="w-200px lt-sm:w-full"
-      />
-      <ElDatePicker
-        v-model="filters.endAt"
-        type="datetime"
-        value-format="YYYY-MM-DDTHH:mm:ss"
-        placeholder="结束时间"
-        aria-label="结束时间"
-        class="w-200px lt-sm:w-full"
-      />
-      <ElButton type="primary" :loading="loading" @click="search">查询</ElButton>
-    </div>
+    <EpaySearchFields
+      :fields="[
+        { key: 'source', width: 140, value: filters.source },
+        { key: 'username', width: 160, value: filters.username },
+        { key: 'levels', width: 180, value: filters.levels },
+        { key: 'status', width: 140, value: filters.status },
+        { key: 'keyword', width: 260, value: filters.keyword },
+        { key: 'startAt', width: 200, value: filters.startAt },
+        { key: 'endAt', width: 200, value: filters.endAt }
+      ]"
+      :loading="loading"
+      @search="search"
+      @reset="resetFilters"
+    >
+      <template #source>
+        <ElSelect
+          v-model="filters.source"
+          clearable
+          placeholder="操作来源"
+          aria-label="操作来源"
+        >
+          <ElOption label="人工操作" value="USER" />
+          <ElOption label="系统自动" value="SYSTEM" />
+        </ElSelect>
+      </template>
+      <template #username>
+        <ElInput
+          v-model="filters.username"
+          clearable
+          placeholder="操作账号"
+          aria-label="操作账号"
+        />
+      </template>
+      <template #levels>
+        <ElSelect
+          v-model="filters.levels"
+          multiple
+          collapse-tags
+          clearable
+          placeholder="日志级别"
+          aria-label="日志级别"
+        >
+          <ElOption v-for="item in levelOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </ElSelect>
+      </template>
+      <template #status>
+        <ElSelect
+          v-model="filters.status"
+          clearable
+          placeholder="执行结果"
+          aria-label="执行结果"
+        >
+          <ElOption label="成功" value="SUCCEEDED" />
+          <ElOption label="失败" value="FAILED" />
+          <ElOption label="等待执行" value="PENDING" />
+          <ElOption label="已跳过" value="SKIPPED" />
+          <ElOption label="已过期" value="EXPIRED" />
+          <ElOption label="结果未知" value="UNKNOWN" />
+        </ElSelect>
+      </template>
+      <template #keyword>
+        <ElInput
+          v-model="filters.keyword"
+          clearable
+          placeholder="操作人、站点、策略或操作内容"
+          aria-label="日志关键词"
+        />
+      </template>
+      <template #startAt>
+        <ElDatePicker
+          v-model="filters.startAt"
+          type="datetime"
+          value-format="YYYY-MM-DDTHH:mm:ss"
+          placeholder="开始时间"
+          aria-label="开始时间"
+        />
+      </template>
+      <template #endAt>
+        <ElDatePicker
+          v-model="filters.endAt"
+          type="datetime"
+          value-format="YYYY-MM-DDTHH:mm:ss"
+          placeholder="结束时间"
+          aria-label="结束时间"
+        />
+      </template>
+    </EpaySearchFields>
 
     <ElTable
       ref="table"

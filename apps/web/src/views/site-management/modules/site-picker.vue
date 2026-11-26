@@ -4,7 +4,8 @@ import { fetchSite, fetchSites } from '@/service/api';
 import type { SiteRecord } from '@/service/api';
 import { $t } from '@/locales';
 
-const value = defineModel<string>({ required: true });
+defineProps<{ placeholder?: string }>();
+const value = defineModel<string>();
 const options = ref<SiteRecord[]>([]);
 const selected = ref<SiteRecord | null>(null);
 const loading = ref(false);
@@ -42,7 +43,7 @@ search();
   <ElSelect
     v-model="value"
     :aria-label="$t('page.site.selectSite')"
-    :placeholder="$t('page.site.selectSite')"
+    :placeholder="placeholder ?? $t('page.site.selectSite')"
     filterable
     remote
     :remote-method="search"

@@ -639,6 +639,26 @@ declare namespace App {
           channelCode: string;
           subchannelCode: string;
           amount: string;
+          orderFilters: {
+            site: string;
+            allSites: string;
+            orderId: string;
+            orderIdPlaceholder: string;
+            merchantId: string;
+            merchantIdPlaceholder: string;
+            amount: string;
+            allStatuses: string;
+            amountSummary: string;
+            createdFrom: string;
+            createdTo: string;
+            more: string;
+            collapse: string;
+            minAmount: string;
+            maxAmount: string;
+            rangeSeparator: string;
+            invalidAmount: string;
+            invalidRange: string;
+          };
           realAmount: string;
           sourceStatus: string;
           orderStatus: string;

@@ -264,7 +264,7 @@
   display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px;
   max-width: 100%; margin-left: auto;
 }
-:is(.epay-layout, .el-overlay) .epay-table-toolbar > .epay-table-search {
+:is(.epay-layout, .el-overlay) :is(.epay-table-toolbar, .panel-search) > .epay-table-search {
   flex: 1 1 560px; min-width: 0; margin: 0; padding: 0; border: 0;
 }
 :is(.epay-layout, .el-overlay) .epay-table-search {
@@ -345,6 +345,7 @@ html.dark .el-overlay { background: #050b1866; }
 .dialog-fade-leave-active .el-dialog { transition: translate 180ms ease, scale 180ms ease, opacity 180ms ease; }
 :is(.dialog-fade-enter-from, .dialog-fade-leave-to) .el-dialog { opacity: 0; translate: 0 -16px; scale: .975; }
 .el-popper.is-light { border: 1px solid var(--epay-edge); border-radius: 14px; background: var(--epay-glass); box-shadow: var(--epay-float-shadow); backdrop-filter: blur(24px); }
+.el-select__popper .el-select-dropdown__item { margin-inline: 6px; border-radius: 9px; }
 .el-dropdown-menu { padding: 6px; border-radius: 14px; background: transparent; }
 .el-dropdown-menu__item { border-radius: 9px; }
 .el-message {
@@ -458,9 +459,17 @@ html[data-motion='reduced'] :is(.el-button, .epay-task, .node-more, .tree-more) 
   translate: none !important; scale: none !important;
 }
 
+.epay-search-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
 :is(.epay-layout, .el-overlay) .epay-search-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
 }
@@ -478,7 +487,7 @@ html[data-motion='reduced'] :is(.el-button, .epay-task, .node-more, .tree-more) 
   flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 16px 20px;
+  gap: inherit;
   min-width: 0;
   padding-top: 4px;
 }

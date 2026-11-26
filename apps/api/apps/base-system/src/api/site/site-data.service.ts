@@ -15,6 +15,7 @@ import type { OrderManifest } from '../../../../../libs/shared/site-connector/sr
 import { channelOrderMetrics, OrderMetricsCache, summarizeOrders } from './channel-order-metrics';
 import {
   PageSiteDataDto,
+  PageSiteOrdersDto,
   SyncPageDto,
   SyncStartDto,
 } from './dto/site-data.dto';
@@ -478,11 +479,11 @@ export class SiteDataService {
     );
   }
 
-  private async activeOrderSites(tx: Prisma.TransactionClient, siteId?: string) {
+  private async activeOrderSites(tx: Prisma.TransactionClient, siteId?: string, filterSiteId?: string) {
     const sites = siteId
       ? [await this.site(tx, siteId)]
       : await tx.epaySite.findMany({
-          where: { activeSyncId: { not: null } },
+          where: { ...(filterSiteId ? { id: filterSiteId } : {}), activeSyncId: { not: null } },
           select: { id: true, activeSyncId: true, timezone: true },
         });
     const active = sites.filter((site): site is typeof site & { activeSyncId: string } => site.activeSyncId !== null);
@@ -535,8 +536,13 @@ export class SiteDataService {
     );
   }
 
-  async pageOrders(query: PageSiteDataDto, siteId?: string) {
-    const { current, size, keyword, status, sourceStatus, channelCode, start, end } = query;
+  async pageOrders(query: PageSiteOrdersDto, siteId?: string) {
+    const { current, size, keyword, orderId, merchantId, minAmount, maxAmount, status, sourceStatus, channelCode, start, end } = query;
+    const orderSiteId = siteId ?? query.siteId;
+    const minimum = minAmount == null ? undefined : new Prisma.Decimal(minAmount);
+    const maximum = maxAmount == null ? undefined : new Prisma.Decimal(maxAmount);
+    if (minimum && maximum && minimum.gt(maximum))
+      throw new BadRequestException('最低金额不能高于最高金额');
     if (status && !Object.values(SiteOrderStatus).includes(status as SiteOrderStatus))
       throw new BadRequestException('订单状态无效');
     if (start && end && new Date(start) >= new Date(end))
@@ -544,10 +550,22 @@ export class SiteDataService {
 
     // 分页和汇总共用筛选值，汇总作用于分页之前的完整结果集。
     const filters: [Prisma.EpayOrderWhereInput, Prisma.Sql][] = [];
+    const amountFilters: Prisma.Sql[] = [];
     if (keyword) {
       const text = { contains: keyword };
       const pattern = `%${keyword}%`;
       filters.push([{ OR: [{ externalId: text }, { merchantId: text }] }, Prisma.sql`(external_id LIKE ${pattern} OR merchant_id LIKE ${pattern})`]);
+    }
+    if (orderId) {
+      const text = orderId.replace(/[\\%_]/g, '\\$&');
+      const pattern = `%${text}%`;
+      filters.push([{ externalId: { contains: text } }, Prisma.sql`external_id LIKE ${pattern}`]);
+    }
+    if (merchantId) filters.push([{ merchantId }, Prisma.sql`merchant_id = ${merchantId}`]);
+    if (minimum) amountFilters.push(Prisma.sql`amount >= CAST(${minimum.toFixed(2)} AS DECIMAL(18, 2))`);
+    if (maximum) amountFilters.push(Prisma.sql`amount <= CAST(${maximum.toFixed(2)} AS DECIMAL(18, 2))`);
+    if (amountFilters.length) {
+      filters.push([{ amount: { gte: minimum, lte: maximum } }, Prisma.join(amountFilters, ' AND ')]);
     }
     if (status) filters.push([{ status: status as SiteOrderStatus }, Prisma.sql`status = ${status}`]);
     if (sourceStatus !== undefined) {
@@ -567,9 +585,9 @@ export class SiteDataService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const sites = await this.activeOrderSites(tx, siteId);
+        const sites = await this.activeOrderSites(tx, siteId, query.siteId);
         const where: Prisma.EpayOrderWhereInput = {
-          ...(siteId ? { siteId } : {}),
+          ...(orderSiteId ? { siteId: orderSiteId } : {}),
           syncRunId: { in: sites.map(site => site.orderRunId).sort() },
           ...Object.assign({}, ...filters.map(([where]) => where)),
         };

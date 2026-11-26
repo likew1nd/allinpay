@@ -474,14 +474,13 @@ html.dark .epay-caption-chip.is-warning { color: #ebcb87; background: #493d2a; }
 .epay-task-list .el-empty__description { margin-top: 3px; color: var(--epay-muted); font-size: 12px; }
 .epay-overview-sites { padding: 28px 0 0; overflow: hidden; }
 .epay-overview-sites > .epay-panel-heading { padding: 0 28px; }
-.epay-site-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 28px; }
+.epay-overview-filters { margin-inline: 28px; }
 .epay-segments { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid transparent; border-radius: 100px; background: var(--epay-track); }
 .epay-segment-indicator { position: absolute; top: 3px; bottom: 3px; left: 0; z-index: 0; pointer-events: none; border-radius: 100px; background: var(--epay-surface); box-shadow: 0 1px 4px #162c4e16, inset 0 1px var(--epay-glass-edge); }
 .epay-segments.is-ready .epay-segment-indicator { transition: transform 320ms var(--epay-spring), width 300ms var(--epay-ease); }
 .epay-segments button { position: relative; z-index: 1; min-height: 31px; padding: 0 10px; border: 0; border-radius: 100px; color: var(--epay-muted); background: transparent; font-size: 12px; cursor: pointer; transition: color 180ms, background 180ms, box-shadow 180ms; }
 .epay-segments button.active { color: var(--epay-blue); background: transparent; box-shadow: none; }
 .epay-segments small { margin-left: 3px; color: inherit; font-size: 10px; }
-.epay-site-search { width: min(260px, 40%); }
 .epay-site-cell { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .epay-site-cell > div { display: grid; min-width: 0; gap: 3px; }
 .epay-site-cell strong { overflow: hidden; color: var(--epay-text); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
@@ -542,8 +541,7 @@ html.dark .epay-caption-chip.is-warning { color: #ebcb87; background: #493d2a; }
   .epay-overview-chart { height: 190px; }
   .epay-overview-sites { padding: 16px 0 0; }
   .epay-overview-sites > .epay-panel-heading { padding-inline: 15px; }
-  .epay-site-toolbar { flex-wrap: wrap; padding: 12px 15px; }
-  .epay-site-search { width: 100%; }
+  .epay-overview-filters { margin-inline: 15px; }
   .epay-overview-sites .el-table { width: 100%; }
   .epay-recent-row { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 9px; padding: 8px 0; }
   .epay-recent-row .epay-time { grid-column: 1; }

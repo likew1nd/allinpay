@@ -25,7 +25,7 @@ import { ApiRes } from '@lib/infra/rest/res.response';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { DeleteSiteDto } from './dto/delete-site.dto';
 import { PageSitesDto } from './dto/page-sites.dto';
-import { PageSiteDataDto } from './dto/site-data.dto';
+import { PageSiteDataDto, PageSiteOrdersDto } from './dto/site-data.dto';
 import { UpdateSiteDto } from './dto/update-site.dto';
 import { UpdateSiteAutomationDto } from './dto/update-site-automation.dto';
 import { SiteDataService } from './site-data.service';
@@ -76,7 +76,7 @@ export class SiteController {
   @Get('orders')
   @UsePermissions({ resource: 'site', action: 'read' })
   @ApiOperation({ summary: '分页查询跨站点订单数据' })
-  async allOrders(@Query() query: PageSiteDataDto) {
+  async allOrders(@Query() query: PageSiteOrdersDto) {
     return ApiRes.success(await this.data.pageOrders(query));
   }
 
@@ -202,7 +202,7 @@ export class SiteController {
 
   @Get(':id/orders')
   @UsePermissions({ resource: 'site', action: 'read' })
-  async orders(@Param('id') id: string, @Query() query: PageSiteDataDto) {
+  async orders(@Param('id') id: string, @Query() query: PageSiteOrdersDto) {
     return ApiRes.success(await this.data.pageOrders(query, id));
   }
 

@@ -216,7 +216,6 @@ async function resetSearch() {
         <SiteSearch v-model:model="searchParams" @reset="resetSearch" @search="getDataByPage()" />
         <div class="epay-table-actions">
           <TableHeaderOperation
-            v-model:columns="columnChecks"
             hide-add
             hide-delete
             :loading="loading"
@@ -229,12 +228,7 @@ async function resetSearch() {
       </div>
       <div>
         <ElTable v-loading="loading" :data="data" row-key="id">
-          <ElTableColumn
-            v-for="col in columns"
-            :key="col.prop"
-            v-bind="col"
-            :fixed="appStore.isMobile ? false : col.fixed"
-          />
+          <TableDataColumns :columns="columns" v-model:checks="columnChecks" :unpin="appStore.isMobile" />
         </ElTable>
         <div class="mt-20px flex justify-end">
           <ElPagination

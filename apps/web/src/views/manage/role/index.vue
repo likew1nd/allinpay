@@ -149,7 +149,6 @@ useAutoRefresh(refreshData, undefined, () => !drawerVisible.value && !deleting.v
         <RoleSearch v-model:model="searchParams" @reset="resetSearchParams" @search="getDataByPage" />
         <div class="epay-table-actions">
           <TableHeaderOperation
-            v-model:columns="columnChecks"
             :disabled-delete="checkedRowKeys.length === 0"
             :loading="loading"
             @add="handleAdd"
@@ -166,7 +165,7 @@ useAutoRefresh(refreshData, undefined, () => !drawerVisible.value && !deleting.v
           row-key="id"
           @selection-change="handleSelectionChange"
         >
-          <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
+          <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
         </ElTable>
         <div class="mt-20px flex justify-end">
           <ElPagination

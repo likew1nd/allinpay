@@ -156,6 +156,12 @@ export const setTransferRuleFlags = (id: string, data: { enabled: boolean }) =>
     method: 'patch',
     data
   });
+export const renameTransferTemplate = (id: string, name: string) =>
+  request<{ id: string; name: string }>({
+    url: '/transfer-rules/' + encodeURIComponent(id) + '/template-name',
+    method: 'patch',
+    data: { name }
+  });
 export const createTransferRule = (data: TransferRuleInput) =>
   request<TransferRule>({ url: '/transfer-rules', method: 'post', data });
 export const updateTransferRule = (id: string, data: TransferRuleInput) =>

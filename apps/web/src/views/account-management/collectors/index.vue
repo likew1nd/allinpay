@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { useTableSelection } from '@/hooks/common/table-selection';
 import { computed, ref } from 'vue';
@@ -227,9 +228,6 @@ const { columns, columnChecks, data, loading, getData, refreshData, getDataByPag
         fixed: 'right',
         formatter: row => (
           <ElSpace>
-            <ElButton link type="primary" onClick={() => showDetails(row.id)}>
-              {$t('page.collector.details')}
-            </ElButton>
             {hasAuth('collector:update') && (
               <>
                 <ElButton link type="primary" onClick={() => edit(row.id)}>
@@ -332,17 +330,9 @@ useAutoRefresh(refreshData, undefined, () =>
     <CollectorDetails v-if="collectorId" :key="collectorId" :collector-id="collectorId" />
     <ElCard v-else class="epay-table-card card-wrapper">
       <div class="epay-table-toolbar">
-        <ElForm class="epay-table-search" inline @submit.prevent="getDataByPage()">
-          <ElFormItem :label="$t('page.collector.keyword')">
-            <ElInput v-model.trim="search.keyword" clearable @clear="getDataByPage()" />
-          </ElFormItem>
-          <ElFormItem>
-            <ElButton type="primary" plain @click="getDataByPage()">{{ $t('common.search') }}</ElButton>
-          </ElFormItem>
-        </ElForm>
+        <EpayKeywordSearch v-model="search.keyword" :placeholder="$t('page.collector.keyword')" @search="getDataByPage()" />
         <div class="epay-table-actions">
           <TableHeaderOperation
-            v-model:columns="columnChecks"
             hide-add
             hide-delete
             :loading="loading"
@@ -359,12 +349,7 @@ useAutoRefresh(refreshData, undefined, () =>
       </div>
       <ElTable ref="tableRef" v-loading="loading" class="collector-table" :data="data" row-key="id" @selection-change="onSelectionChange">
         <ElTableColumn type="selection" reserve-selection width="40" :fixed="appStore.isMobile ? false : 'left'" />
-        <ElTableColumn
-          v-for="col in columns"
-          :key="col.prop"
-          v-bind="col"
-          :fixed="appStore.isMobile ? false : col.fixed"
-        />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" :unpin="appStore.isMobile" />
       </ElTable>
       <div class="mt-20px flex justify-end">
         <ElPagination

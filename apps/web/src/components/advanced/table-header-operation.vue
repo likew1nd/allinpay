@@ -19,10 +19,6 @@ interface Emits {
 
 const emit = defineEmits<Emits>();
 
-const columns = defineModel<UI.TableColumnCheck[]>('columns', {
-  default: () => []
-});
-
 function add() {
   emit('add');
 }
@@ -55,7 +51,6 @@ function batchDelete() {
         </template>
       </ElPopconfirm>
     </slot>
-    <TableColumnSetting v-model:columns="columns" />
     <slot name="suffix"></slot>
   </ElSpace>
 </template>

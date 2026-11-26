@@ -137,6 +137,14 @@ export interface SiteDataParams {
   start?: string;
   end?: string;
 }
+
+export interface SiteOrderParams extends SiteDataParams {
+  siteId?: string;
+  orderId?: string;
+  merchantId?: string;
+  minAmount?: string;
+  maxAmount?: string;
+}
 export interface SiteChannel {
   details?: {
     totalSuccessAmount?: string;
@@ -365,14 +373,14 @@ export function fetchSitePollingGroups(id: string, params: SiteDataParams) {
     params
   });
 }
-export function fetchSiteOrders(id: string, params: SiteDataParams) {
+export function fetchSiteOrders(id: string, params: SiteOrderParams) {
   return request<SiteDataPage<SiteOrder, OrderListStatistics>>({
     url: `/sites/${encodeURIComponent(id)}/orders`,
     method: 'get',
     params
   });
 }
-export function fetchAllSiteOrders(params: SiteDataParams) {
+export function fetchAllSiteOrders(params: SiteOrderParams) {
   return request<SiteDataPage<SiteOrder, OrderListStatistics>>({ url: '/sites/orders', method: 'get', params });
 }
 export function fetchAllSiteOrderStatistics() {

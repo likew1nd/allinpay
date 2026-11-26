@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { computed, ref, watch } from "vue";
 import { useAutoRefresh } from "@/hooks/common/auto-refresh";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -136,21 +137,13 @@ useAutoRefresh(refreshData, undefined, () => !selectedId.value && !working.value
   <GroupWorkspace v-if="selectedId" :key="selectedId" :group-id="selectedId" />
   <ElCard v-else class="epay-table-card card-wrapper">
     <div class="epay-table-toolbar">
-      <ElForm class="epay-table-search" inline @submit.prevent="search">
-        <ElFormItem label="策略组名称">
-          <ElInput v-model="keyword" placeholder="搜索策略组名称" clearable @clear="search" />
-        </ElFormItem>
-        <ElFormItem>
-          <ElButton type="primary" native-type="submit">搜索</ElButton>
-        </ElFormItem>
-      </ElForm>
+      <EpayKeywordSearch v-model="keyword" placeholder="搜索策略组名称" label="策略组名称" @search="search()" />
       <div class="epay-table-actions">
         <ElButton type="primary" @click="openCreate">新增策略组</ElButton>
         <ElButton v-if="hasAuth('adjustment:read')" @click="logVisible = true">
           <template #icon><SvgIcon icon="tabler:history" /></template>
           {{ $t('route.strategy-center_adjustments') }}
         </ElButton>
-        <TableColumnSetting v-model:columns="columnChecks" />
       </div>
     </div>
 
@@ -162,18 +155,18 @@ useAutoRefresh(refreshData, undefined, () => !selectedId.value && !working.value
         align="center"
         :index="(index: number) => (current - 1) * pageSize + index + 1"
       />
-      <ElTableColumn v-for="column in columns" :key="column.prop" v-bind="column">
-        <template #default="{ row }">
-          <RouterLink v-if="column.prop === 'name'" class="epay-site-cell" :to="{ query: { ...route.query, group: row.id } }">
+      <TableDataColumns :columns="columns" v-model:checks="columnChecks">
+        <template #default="{ row, field }">
+          <RouterLink v-if="field === 'name'" class="epay-site-cell" :to="{ query: { ...route.query, group: row.id } }">
             <span class="epay-color-icon"><SvgIcon icon="tabler:adjustments-horizontal" /></span>
             <div>
               <strong>{{ row.name }}</strong>
               <small v-if="row.description" :title="row.description">{{ row.description }}</small>
             </div>
           </RouterLink>
-          <template v-else-if="column.prop === 'rules'">{{ row.configuration?.rules.length ?? 0 }}</template>
-          <template v-else-if="column.prop === 'targets'">{{ row._count?.targets ?? 0 }}</template>
-          <template v-else-if="column.prop === 'sites'">
+          <template v-else-if="field === 'rules'">{{ row.configuration?.rules.length ?? 0 }}</template>
+          <template v-else-if="field === 'targets'">{{ row._count?.targets ?? 0 }}</template>
+          <template v-else-if="field === 'sites'">
             {{
               row.targets
                 .map((target: StrategyGroupRecord["targets"][number]) => target.site.name)
@@ -181,13 +174,13 @@ useAutoRefresh(refreshData, undefined, () => !selectedId.value && !working.value
             }}
           </template>
           <EpayStatusSwitch
-            v-else-if="column.prop === 'status'"
+            v-else-if="field === 'status'"
             :checked="row.status === 'RUNNING'"
             :label="row.status === 'RUNNING' ? '停止策略组' : '启用策略组'"
             :loading="working"
             @change="toggleGroup(row)"
           />
-          <template v-else-if="column.prop === 'operate'">
+          <template v-else-if="field === 'operate'">
             <ElButton type="primary" link @click="enterGroup(row.id)">进入配置</ElButton>
             <ElButton
               type="danger"
@@ -199,7 +192,7 @@ useAutoRefresh(refreshData, undefined, () => !selectedId.value && !working.value
             </ElButton>
           </template>
         </template>
-      </ElTableColumn>
+      </TableDataColumns>
     </ElTable>
     <ElPagination
       v-bind="mobilePagination"

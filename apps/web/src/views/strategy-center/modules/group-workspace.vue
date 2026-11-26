@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { ElMessageBox } from "element-plus";
@@ -6,11 +7,13 @@ import type { TreeInstance } from "element-plus";
 import { deleteStrategyTemplate, evaluateStrategyGroup, fetchStrategyGroupConfiguration, fetchStrategyObjectCatalog, fetchStrategyTemplates, saveStrategyGroupConfiguration, updateStrategyGroup } from "@/service/api";
 import type { StrategyConfiguration, StrategyEvaluation, StrategyGroupBinding, StrategyGroupRecord, StrategyObjectCatalog, StrategyTemplate, TemplateInput, TemplateRule, WorkspaceGroupInput, WorkspaceTarget } from "@/service/api";
 import { showSwitchMessage } from "@/utils/message";
+import { useAuth } from "@/hooks/business/auth";
 import EpayStatusSwitch from "@/components/custom/epay-status-switch.vue";
 import ConstraintsForm from "./constraints-form.vue";
 import EditableGroupLabel from "./editable-group-label.vue";
 import ResultTable from "./result-table.vue";
 import RuleForm from "./rule-form.vue";
+import StrategyTemplatePanel from "./strategy-template-panel.vue";
 import TemplateEditor from "./template-editor.vue";
 import TreeContextMenu from "./tree-context-menu.vue";
 import type { MenuItem } from "./tree-context-menu.vue";
@@ -57,6 +60,8 @@ interface StrategyNode {
   ruleIndex?: number;
   children?: StrategyNode[];
 }
+const { hasAuth } = useAuth();
+const canEditIdentity = computed(() => hasAuth("strategy:update"));
 const activeGroup = ref<StrategyGroupRecord>();
 const templates = ref<StrategyTemplate[]>([]);
 const catalog = ref<StrategyObjectCatalog>({ sites: [], owners: [] });
@@ -71,7 +76,6 @@ const objectTree = ref<TreeInstance>();
 const strategyTree = ref<TreeInstance>();
 const menu = ref<InstanceType<typeof TreeContextMenu>>();
 const objectSearch = ref("");
-const templateSearch = ref("");
 const selectedObject = ref<ObjectNode | null>(null);
 const selectedTemplate = ref("");
 const result = ref<StrategyEvaluation | null>(null);
@@ -102,8 +106,6 @@ const needsStatus = computed(() => draft.value?.configuration.rules.some((rule) 
 const activeRuleCount = computed(() => draft.value?.configuration.rules.length ?? 0);
 const previewTemplate = computed(() => templates.value.find((template) => template.id === selectedTemplate.value));
 const displayedConfiguration = computed(() => previewTemplate.value ?? draft.value?.configuration);
-const templateItems = computed(() => templates.value.filter((template) => `${template.name} ${template.description ?? ""}`.includes(templateSearch.value)));
-
 async function loadTemplates() {
   const records: StrategyTemplate[] = [];
   for (let current = 1; ; current += 1) {
@@ -718,9 +720,9 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", preventUnload))
               </div>
               <template v-if="draft">
                 <h1>
-                  <EditableGroupLabel v-model="draft.name" required :max-length="100" />
+                  <EditableGroupLabel v-model="draft.name" label="策略组名称" :readonly="!canEditIdentity" show-hint required :max-length="100" />
                 </h1>
-                <EditableGroupLabel v-model="draft.description" class="group-description" :max-length="500" />
+                <EditableGroupLabel v-model="draft.description" label="策略组说明" :readonly="!canEditIdentity" class="group-description" :max-length="500" />
               </template>
               <h1 v-else>策略组配置</h1>
             </div>
@@ -745,7 +747,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", preventUnload))
             </div>
           </div>
           <div class="panel-search">
-            <ElInput v-model="objectSearch" placeholder="搜索站点、轮询组、通道" clearable />
+            <EpayKeywordSearch v-model="objectSearch" placeholder="搜索站点、轮询组、通道" />
           </div>
           <div class="panel-hint">
             勾选树节点选择受控对象；「全部通道」中的「备用」单独配置补充池，不会自动绑定。 成功率按近
@@ -851,44 +853,15 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", preventUnload))
           </div>
         </section>
 
-        <section class="tree-panel template-panel" @contextmenu.prevent="templateMenu($event)">
-          <div class="panel-heading">
-            <div>
-              <strong>策略模板</strong>
-              <span class="panel-count">{{ templates.length }} 个</span>
-            </div>
-            <ElButton size="small" @click="openTemplate()">新增模板</ElButton>
-          </div>
-          <div class="panel-search">
-            <ElInput v-model="templateSearch" placeholder="搜索模板" clearable />
-          </div>
-          <div class="panel-hint">点击模板，在中栏预览规则；应用并保存后生效。</div>
-          <div class="tree-scroll template-list">
-            <div
-              v-for="template in templateItems"
-              :key="template.id"
-              class="template-card"
-              :class="{ selected: selectedTemplate === template.id }"
-              tabindex="0"
-              role="button"
-              :aria-pressed="selectedTemplate === template.id"
-              @click="selectedTemplate = template.id"
-              @keydown.enter.prevent="selectedTemplate = template.id"
-              @keydown.space.prevent="selectedTemplate = template.id"
-              @contextmenu.prevent.stop="templateMenu($event, template)"
-            >
-              <div class="template-title">
-                <strong>{{ template.name }}</strong>
-                <button class="node-more" aria-label="模板操作" @click.stop="templateMenu($event, template)">⋯</button>
-              </div>
-              <p v-if="template.description" class="template-description">
-                {{ template.description }}
-              </p>
-              <div class="template-constraints">{{ template.rules.length }} 条规则 · 近 {{ template.windowMinutes }} 分钟 · 冷却 {{ template.cooldownSeconds }} 秒</div>
-            </div>
-            <ElEmpty v-if="!templateItems.length" :image-size="70" description="暂无模板，可新增或将策略组保存为模板" />
-          </div>
-        </section>
+        <StrategyTemplatePanel
+          v-model="selectedTemplate"
+          :templates="templates"
+          empty-text="暂无模板，可新增或将策略组保存为模板"
+          @create="openTemplate()"
+          @menu="templateMenu"
+        >
+          <template #summary="{ template }">{{ template.rules.length }} 条规则 · 近 {{ template.windowMinutes }} 分钟 · 冷却 {{ template.cooldownSeconds }} 秒</template>
+        </StrategyTemplatePanel>
       </div>
       <div class="workspace-footer">
         <div>
@@ -928,4 +901,5 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", preventUnload))
   </div>
 </template>
 
+<style scoped src="./strategy-panel.css"></style>
 <style scoped src="./group-workspace.css"></style>

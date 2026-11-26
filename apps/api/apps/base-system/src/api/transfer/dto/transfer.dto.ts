@@ -53,6 +53,9 @@ export class TransferStrategyRuleDto {
   @Matches(AMOUNT, { message: AMOUNT_MESSAGE }) maxAmount!: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => AllocationDto) allocations!: AllocationDto[];
 }
+export class RenameTransferTemplateDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) name!: string;
+}
 export class CreateTransferDraftDto {
   @IsString() @IsNotEmpty() @MaxLength(100) name!: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;

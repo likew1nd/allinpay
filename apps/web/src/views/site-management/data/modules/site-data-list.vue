@@ -139,19 +139,11 @@ useAutoRefresh(refreshData, undefined, () => props.active);
           @reset="resetSearch"
           @search="getDataByPage()"
         />
-        <div class="epay-table-actions">
-          <TableHeaderOperation
-            v-model:columns="columnChecks"
-            hide-add
-            hide-delete
-            :loading="loading"
-          />
-        </div>
       </div>
 
       <ElAlert v-if="failed" :title="$t('page.site.loadFailed')" type="error" :closable="false" class="mb-12px" />
       <ElTable v-loading="loading" :data="data" row-key="id" border>
-        <ElTableColumn v-for="column in columns" :key="column.prop" v-bind="column" />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
       </ElTable>
       <div class="mt-20px flex justify-end">
         <ElPagination

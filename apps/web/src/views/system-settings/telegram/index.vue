@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpaySearchFields from '@/components/custom/epay-search-fields.vue';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useUITable } from '@/hooks/common/table';
 import { useTableQuery } from '@/hooks/common/table-query';
@@ -67,7 +68,7 @@ const status = ref('');
 const targetFilter = ref('');
 const dates = ref<[string, string] | null>(null);
 const { query: recordQuery, applyQuery: applyRecordQuery } = useTableQuery(() => ({
-  status: status.value || undefined, targetId: targetFilter.value || undefined,
+  kind: recordKind.value, status: status.value || undefined, targetId: targetFilter.value || undefined,
   from: dates.value?.[0], to: dates.value?.[1]
 }));
 const drawerTitle = computed(() => ({ target: '群配置', binding: '用户授权', command: '命令配置', '': '' })[drawer.value]);
@@ -191,11 +192,17 @@ async function testTarget(id: string) {
   const result = await api.testTelegramTarget(id);
   if (!result.error) window.$message?.success('测试消息已排队，请在运行记录查看结果');
 }
+const displayedKind = ref(recordKind.value);
 const { data: records, loading: recordLoading, getData: getRecords, refreshData: refreshRecords } = useUITable({
   immediate: false,
   columns: () => [],
-  api: () => api.fetchTelegramRecords(recordKind.value, { ...recordQuery.value, current: current.value, size: 20 }),
+  api: async () => {
+    const { kind, ...filters } = recordQuery.value;
+    const result = await api.fetchTelegramRecords(kind, { ...filters, current: current.value, size: 20 });
+    return { ...result, kind };
+  },
   transform: result => {
+    displayedKind.value = result.kind;
     total.value = result.data!.total;
     return result.data!.records;
   }
@@ -212,7 +219,13 @@ async function retry(row: api.TelegramRecord) {
 // 新增的转账二维码类型显示中文名，其余类型保持原样显示
 const deliveryKindNames: Record<string, string> = { ENV_SUMMARY: '环境巡检摘要', ENV_ALERT: '环境异常', ENV_SUMMARY_TEST: '环境摘要测试', ENV_ALERT_TEST: '环境异常测试', CHANNEL_NOTICE: '通道状态', CHANNEL_TEST: '通道状态测试', NOTICE_ROUTE_TEST: '通知测试', ENV_SUMMARY_PREVIEW: '环境摘要测试', ENV_ALERT_PREVIEW: '环境异常测试', TRANSFER_QR_TEST: '转账二维码测试', TRANSFER: '自动转账结果', TRANSFER_PHOTO: '转账结果截图', TRANSFER_TEXT: '自动转账结果', TRANSFER_RESULT_TEST: '转账结果测试', TRANSFER_QR: '转账二维码', TRANSFER_QR_VOID: '二维码作废' };
 function kindLabel(row: api.TelegramRecord) { return row.kind ? (deliveryKindNames[row.kind] ?? row.kind) : row.actionKey; }
-function switchRecords() { status.value = ''; void loadRecords(true); }
+function resetRecordFilters() {
+  recordKind.value = 'deliveries';
+  status.value = '';
+  targetFilter.value = '';
+  dates.value = null;
+  return loadRecords(true);
+}
 onMounted(() => { void load(); void loadChannelNotice(); void loadEnvironmentNotice(); });
 onDeactivated(clearSecrets);
 onUnmounted(() => { clearSecrets(); listSequence += 1; });
@@ -224,7 +237,7 @@ useAutoRefresh(() => tab.value === 'records' ? refreshRecords() : load(true), un
   <div class="flex-col-stretch gap-16px">
     <ElCard v-loading="loading" class="card-wrapper">
       <template #header><div class="flex flex-wrap items-center justify-between gap-8px"><span>Telegram 设置</span><ElButton v-if="tab === 'bot'" @click="load()">刷新配置</ElButton></div></template>
-      <ElTabs v-model="tab" @tab-change="tab === 'records' && loadRecords(true)">
+      <ElTabs v-model="tab" @tab-change="tab === 'records' && loadRecords()">
         <ElTabPane label="Bot 连接" name="bot">
           <ElAlert :closable="false" type="info" title="接入顺序：保存并启用 Bot → 私聊绑定本人 → 生成群接入码 → 设置通知接收群与命令授权。" class="mb-16px" />
           <ElDescriptions v-if="config" :column="1" border class="mb-16px">
@@ -330,16 +343,39 @@ useAutoRefresh(() => tab.value === 'records' ? refreshRecords() : load(true), un
           </ElTable>
         </ElTabPane>
         <ElTabPane label="运行记录" name="records">
-          <div class="mb-16px flex flex-wrap gap-8px">
-            <ElSelect v-model="recordKind" class="w-140px" @change="switchRecords"><ElOption label="投递记录" value="deliveries" /><ElOption label="命令执行" value="executions" /></ElSelect>
-            <ElSelect v-model="status" clearable placeholder="全部状态" class="w-180px"><ElOption v-for="item in statuses" :key="item" :label="item" :value="item" /></ElSelect>
-            <ElSelect v-model="targetFilter" clearable placeholder="全部群" class="w-180px"><ElOption v-for="item in targets" :key="item.id" :label="item.name" :value="item.id" /></ElSelect>
-            <ElDatePicker v-model="dates" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ssZ" start-placeholder="开始时间" end-placeholder="结束时间" />
-            <ElButton :loading="recordLoading" @click="loadRecords(true)">查询</ElButton>
-          </div>
+          <EpaySearchFields
+            :fields="[
+              { key: 'kind', width: 140, value: recordKind === 'deliveries' ? '' : recordKind },
+              { key: 'status', width: 150, value: status },
+              { key: 'target', width: 160, value: targetFilter },
+              { key: 'dates', width: 320, value: dates }
+            ]"
+            :loading="recordLoading"
+            @search="loadRecords(true)"
+            @reset="resetRecordFilters"
+          >
+            <template #kind>
+              <ElSelect v-model="recordKind" aria-label="记录类型" @change="status = ''">
+                <ElOption label="投递记录" value="deliveries" /><ElOption label="命令执行" value="executions" />
+              </ElSelect>
+            </template>
+            <template #status>
+              <ElSelect v-model="status" clearable placeholder="全部状态" aria-label="记录状态">
+                <ElOption v-for="item in statuses" :key="item" :label="item" :value="item" />
+              </ElSelect>
+            </template>
+            <template #target>
+              <ElSelect v-model="targetFilter" clearable placeholder="全部群" aria-label="接收群">
+                <ElOption v-for="item in targets" :key="item.id" :label="item.name" :value="item.id" />
+              </ElSelect>
+            </template>
+            <template #dates>
+              <ElDatePicker v-model="dates" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ssZ" aria-label="记录时间范围" start-placeholder="开始时间" end-placeholder="结束时间" />
+            </template>
+          </EpaySearchFields>
           <ElTable v-loading="recordLoading" :data="records" row-key="id" border>
             <ElTableColumn prop="createdAt" label="时间" min-width="200" /><ElTableColumn prop="status" label="状态" min-width="170" /><ElTableColumn label="类型 / 动作" min-width="150"><template #default="{ row }">{{ kindLabel(row) }}</template></ElTableColumn><ElTableColumn label="内容 / 结果" min-width="260" show-overflow-tooltip><template #default="{ row }">{{ row.text || row.result || row.error || '—' }}</template></ElTableColumn><ElTableColumn prop="error" label="错误" min-width="180" show-overflow-tooltip />
-            <ElTableColumn v-if="recordKind === 'deliveries' && hasAuth('telegram:retry')" label="操作" width="90"><template #default="{ row }"><ElButton v-if="['FAILED', 'UNKNOWN'].includes(row.status) && row.kind !== 'TRANSFER_QR'" link type="primary" @click="retry(row)">重试</ElButton></template></ElTableColumn>
+            <ElTableColumn v-if="displayedKind === 'deliveries' && hasAuth('telegram:retry')" label="操作" width="90"><template #default="{ row }"><ElButton v-if="['FAILED', 'UNKNOWN'].includes(row.status) && row.kind !== 'TRANSFER_QR'" link type="primary" @click="retry(row)">重试</ElButton></template></ElTableColumn>
           </ElTable>
           <ElPagination v-model:current-page="current" class="mt-16px" :total="total" :page-size="20" layout="total, prev, pager, next" @current-change="loadRecords()" />
         </ElTabPane>

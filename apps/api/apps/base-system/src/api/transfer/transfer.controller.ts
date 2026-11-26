@@ -28,6 +28,7 @@ import {
   UpdatePayeeStatusDto,
   UpdateTransferRuleDto,
   UpdateTransferRuleFlagsDto,
+  RenameTransferTemplateDto,
 } from './dto/transfer.dto';
 import { PageAccountDto } from '../account/dto/account.dto';
 import { DeleteConfirmDto } from '../delete-check';
@@ -148,6 +149,13 @@ export class TransferController {
     @Request() request: any,
   ) {
     return ApiRes.success(await this.rules.update(id, dto, actorOf(request)));
+  }
+
+  @Patch('transfer-rules/:id/template-name')
+  @UsePermissions({ resource: 'transfer-rule', action: 'update' })
+  @ApiOperation({ summary: '修改转账模板名称' })
+  async renameTemplate(@Param('id') id: string, @Body() dto: RenameTransferTemplateDto, @Request() request: any) {
+    return ApiRes.success(await this.rules.renameTemplate(id, dto.name, actorOf(request)));
   }
 
   @Patch('transfer-rules/:id/flags')

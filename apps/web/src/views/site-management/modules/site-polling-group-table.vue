@@ -106,38 +106,24 @@ useAutoRefresh(refreshData, undefined, () => props.active);
     />
     <ElCard class="epay-table-card card-wrapper">
       <div class="epay-table-toolbar">
-        <ElForm class="epay-table-search" inline @submit.prevent="getDataByPage()">
-          <EpaySearchFields :values="[search.status]">
-            <ElFormItem :label="$t('common.keywordSearch')">
-              <ElInput
-                v-model="search.keyword"
-                clearable
-                :placeholder="$t('page.site.name')"
-              />
-            </ElFormItem>
-            <template #actions>
-              <ElButton type="primary" native-type="submit" :disabled="!siteId">{{ $t('common.search') }}</ElButton>
-              <ElButton @click="reset">{{ $t('common.reset') }}</ElButton>
-            </template>
-            <template #advanced>
-              <ElFormItem :label="$t('page.site.effectiveStatus')">
-                <ElSelect v-model="search.status" clearable class="w-170px">
-                  <ElOption v-for="status in statuses" :key="status" :value="status" :label="availability(status)" />
-                </ElSelect>
-              </ElFormItem>
-            </template>
-          </EpaySearchFields>
-        </ElForm>
-        <div class="epay-table-actions">
-          <div class="flex flex-wrap items-center gap-8px">
-            <TableHeaderOperation
-              v-model:columns="columnChecks"
-              hide-add
-              hide-delete
-              :loading="loading"
-            />
-          </div>
-        </div>
+        <EpaySearchFields
+          :fields="[
+            { key: 'keyword', width: 180, value: search.keyword },
+            { key: 'status', width: 144, value: search.status }
+          ]"
+          :search-disabled="!siteId"
+          @search="getDataByPage()"
+          @reset="reset"
+        >
+          <template #keyword>
+            <ElInput v-model="search.keyword" clearable placeholder="轮询组名称或编号" aria-label="轮询组名称或编号" />
+          </template>
+          <template #status>
+            <ElSelect v-model="search.status" clearable :placeholder="$t('page.site.effectiveStatus')" :aria-label="$t('page.site.effectiveStatus')">
+              <ElOption v-for="status in statuses" :key="status" :value="status" :label="availability(status)" />
+            </ElSelect>
+          </template>
+        </EpaySearchFields>
       </div>
 
       <ElAlert v-if="failed" :title="$t('page.site.loadFailed')" type="error" :closable="false" class="mb-12px" />
@@ -152,7 +138,7 @@ useAutoRefresh(refreshData, undefined, () => props.active);
           border
           :empty-text="$t(siteId ? 'page.site.noSyncRows' : 'page.site.selectHint')"
         >
-          <ElTableColumn v-for="column in columns" :key="column.prop" v-bind="column" />
+          <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
         </ElTable>
         <div class="mt-20px flex justify-end">
           <ElPagination

@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { useTableQuery } from '@/hooks/common/table-query';
 import { ref } from 'vue';
@@ -17,7 +18,7 @@ const statusLabels: Record<string, string> = {
 };
 const search = ref({ current: 1, size: 20, keyword: '' });
 const { query, applyQuery } = useTableQuery(search);
-const { columns, data, getData, refreshData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
+const { columns, columnChecks, data, getData, refreshData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
   onSearch: applyQuery,
   api: () => fetchFundAccounts(query.value),
   transform: response => defaultTransform(response),
@@ -148,21 +149,7 @@ useAutoRefresh(refreshData, undefined, () => !drawer.value && !saving.value);
     />
     <ElCard class="epay-table-card card-wrapper">
       <div class="epay-table-toolbar">
-        <ElForm class="epay-table-search" inline @submit.prevent="getDataByPage()">
-          <ElFormItem label="关键词">
-            <ElInput
-              v-model="search.keyword"
-              clearable
-              placeholder="账户名称或归属主体"
-              class="w-220px"
-              aria-label="搜索资金账户"
-              @clear="getDataByPage()"
-            />
-          </ElFormItem>
-          <ElFormItem>
-            <ElButton type="primary" native-type="submit">搜索</ElButton>
-          </ElFormItem>
-        </ElForm>
+        <EpayKeywordSearch v-model="search.keyword" placeholder="账户名称或归属主体" label="搜索资金账户" @search="getDataByPage()" />
         <div class="epay-table-actions">
           <div class="flex flex-wrap gap-8px">
             <ElButton v-if="hasAuth('fund-account:create')" type="primary" @click="openAdd">新增账户</ElButton>
@@ -171,7 +158,7 @@ useAutoRefresh(refreshData, undefined, () => !drawer.value && !saving.value);
       </div>
 
       <ElTable v-loading="loading" :data="data" row-key="id" border>
-        <ElTableColumn v-for="column in columns" :key="column.prop" v-bind="column" />
+        <TableDataColumns :columns="columns" v-model:checks="columnChecks" />
       </ElTable>
       <div class="mt-16px flex justify-end">
         <ElPagination

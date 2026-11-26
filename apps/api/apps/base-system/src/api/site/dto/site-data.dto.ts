@@ -250,3 +250,33 @@ export class PageSiteDataDto {
   @IsDateString({ strict: true })
   end?: string;
 }
+
+export class PageSiteOrdersDto extends PageSiteDataDto {
+  @Transform(({ obj, key }) => obj[key])
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  siteId?: string;
+
+  @Transform(({ obj, key }) => obj[key])
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  orderId?: string;
+
+  @Transform(({ obj, key }) => obj[key])
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  merchantId?: string;
+
+  @Transform(({ obj, key }) => obj[key])
+  @IsOptional()
+  @Matches(/^\d{1,16}(?:\.\d{1,2})?$/)
+  minAmount?: string;
+
+  @Transform(({ obj, key }) => obj[key])
+  @IsOptional()
+  @Matches(/^\d{1,16}(?:\.\d{1,2})?$/)
+  maxAmount?: string;
+}

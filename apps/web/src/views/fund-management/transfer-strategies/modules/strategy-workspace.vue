@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EpayKeywordSearch from '@/components/custom/epay-keyword-search.vue';
 import { computed, onMounted, ref } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
@@ -6,13 +7,20 @@ import {
   createTransferRule,
   fetchAllPayees,
   fetchAllTransferRules,
+  deleteTransferRule,
+  fetchTransferRuleDeleteCheck,
+  renameTransferTemplate,
   updateTransferRule
 } from '@/service/api';
 import type { Payee, TransferRule, TransferStrategyRule } from '@/service/api';
 import { useAuth } from '@/hooks/business/auth';
+import EpayDeleteDialog from '@/components/custom/epay-delete-dialog.vue';
 import EpayStatusSwitch from '@/components/custom/epay-status-switch.vue';
 import TreeContextMenu from '@/views/strategy-center/modules/tree-context-menu.vue';
 import type { MenuItem } from '@/views/strategy-center/modules/tree-context-menu.vue';
+import StrategyTemplatePanel from '@/views/strategy-center/modules/strategy-template-panel.vue';
+import StrategyTemplateDialog from '@/views/strategy-center/modules/strategy-template-dialog.vue';
+import TransferConstraintsForm from './transfer-constraints-form.vue';
 import RuleForm from './rule-form.vue';
 import EditableGroupLabel from '@/views/strategy-center/modules/editable-group-label.vue';
 import {
@@ -35,11 +43,19 @@ interface TreeNode {
   children?: TreeNode[];
 }
 const props = defineProps<{ strategyId: string }>();
-const emit = defineEmits<{ back: []; saved: [id: string]; createTemplate: [] }>();
+const emit = defineEmits<{ back: [] }>();
 const { hasAuth } = useAuth();
 const payees = ref<Payee[]>([]);
 const strategies = ref<TransferRule[]>([]);
-const selectedId = ref('');
+const templateDialog = ref(false);
+const renameTarget = ref<TransferRule | null>(null);
+const templateName = ref('');
+const renameDialog = ref(false);
+const editingTemplateId = ref<string>();
+const templateDraft = ref(defaultStrategy());
+const templateError = ref('');
+const deleteDialog = ref(false);
+const deleteTarget = ref<TransferRule | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const form = ref(defaultStrategy());
@@ -50,14 +66,10 @@ const templateSearch = ref('');
 const selectedObject = ref('');
 const previewId = ref('');
 const menu = ref<InstanceType<typeof TreeContextMenu>>();
-const templates = computed(() =>
-  strategies.value.filter(
-    rule => rule.isTemplate && rule.name.toLowerCase().includes(templateSearch.value.toLowerCase())
-  )
-);
+const templates = computed(() => strategies.value.filter(rule => rule.isTemplate));
 const preview = computed(() => strategies.value.find(rule => rule.id === previewId.value));
 const displayed = computed(() => (preview.value ? asDraft(preview.value) : form.value));
-const canSave = computed(() => hasAuth(selectedId.value ? 'transfer-rule:update' : 'transfer-rule:create'));
+const canSave = computed(() => hasAuth('transfer-rule:update'));
 const editable = computed(() => canSave.value && !saving.value && !preview.value);
 const payeeNode = (payee: Payee): TreeNode => ({
   id: `payee:${payee.id}`,
@@ -78,58 +90,62 @@ function allocationLabel(row: TransferStrategyRule['allocations'][number]) {
   const target = legacyPool ? '需重新选择收款账号' : payees.value.find(payee => payee.id === row.targetId)?.name;
   return `${legacyPool ? '历史配置' : '收款账号'}：${target || '未选择 / 已失效'} · ${row.basisPoints / 100}%`;
 }
-const strategyNodes = computed<TreeNode[]>(() => [
-  ...displayed.value.rules.map(
-    (rule, index): TreeNode => ({
-      id: `rule:${index}`,
-      kind: 'rule',
-      index,
-      label: `${index + 1}. ${rule.name}`,
-      enabled: rule.enabled,
-      children: [
-        ...rule.conditions.map(
-          (condition, ci): TreeNode => ({
-            id: `condition:${index}:${ci}`,
-            kind: 'condition',
-            index,
-            label: `${ci ? '且 ' : ''}${conditionLabel(condition)}`
-          })
-        ),
-        {
-          id: `action:${index}`,
-          kind: 'action',
-          index,
-          label: `自动转账 · 本次总额上限 ${rule.maxAmount} 元`,
-          children: rule.allocations.map(
-            (row, ai): TreeNode => ({
-              id: `allocation:${index}:${ai}`,
-              kind: 'action',
+function ruleTree(model: ReturnType<typeof defaultStrategy>): TreeNode[] {
+  return [
+    ...model.rules.map(
+      (rule, index): TreeNode => ({
+        id: `rule:${index}`,
+        kind: 'rule',
+        index,
+        label: `${index + 1}. ${rule.name}`,
+        enabled: rule.enabled,
+        children: [
+          ...rule.conditions.map(
+            (condition, ci): TreeNode => ({
+              id: `condition:${index}:${ci}`,
+              kind: 'condition',
               index,
-              label: allocationLabel(row)
+              label: `${ci ? '且 ' : ''}${conditionLabel(condition)}`
             })
-          )
+          ),
+          {
+            id: `action:${index}`,
+            kind: 'action',
+            index,
+            label: `自动转账 · 本次总额上限 ${rule.maxAmount} 元`,
+            children: rule.allocations.map(
+              (row, ai): TreeNode => ({
+                id: `allocation:${index}:${ai}`,
+                kind: 'action',
+                index,
+                label: allocationLabel(row)
+              })
+            )
+          }
+        ]
+      })
+    ),
+    {
+      id: 'constraints',
+      kind: 'constraints',
+      label: '执行约束与通知',
+      children: [
+        {
+          id: 'reserve',
+          kind: 'constraints',
+          label: `保留 ${model.reserveAmount} 元 · 手续费预留 ${model.feeBuffer} 元`
+        },
+        {
+          id: 'limits',
+          kind: 'constraints',
+          label: `最小 ${model.minAmount} 元 · 每日限额 ${model.dailyLimit || '不限'}`
         }
       ]
-    })
-  ),
-  {
-    id: 'constraints',
-    kind: 'constraints',
-    label: '执行约束与通知',
-    children: [
-      {
-        id: 'reserve',
-        kind: 'constraints',
-        label: `保留 ${displayed.value.reserveAmount} 元 · 手续费预留 ${displayed.value.feeBuffer} 元`
-      },
-      {
-        id: 'limits',
-        kind: 'constraints',
-        label: `最小 ${displayed.value.minAmount} 元 · 每日限额 ${displayed.value.dailyLimit || '不限'}`
-      }
-    ]
-  }
-]);
+    }
+  ];
+}
+const strategyNodes = computed(() => ruleTree(displayed.value));
+const templateNodes = computed(() => ruleTree(templateDraft.value));
 let sequence = 0;
 async function load() {
   const current = ++sequence;
@@ -167,14 +183,6 @@ async function allowDiscard() {
 const canLeave = async () => !saving.value && (await allowDiscard());
 onBeforeRouteLeave(canLeave);
 onBeforeRouteUpdate(canLeave);
-async function selectStrategy(id = '', isTemplate = false) {
-  if (saving.value || !(await allowDiscard())) return;
-  const row = strategies.value.find(item => item.id === id);
-  selectedId.value = row?.id || '';
-  previewId.value = '';
-  form.value = row ? asDraft(row) : { ...defaultStrategy(), isTemplate };
-  saved.value = JSON.stringify(form.value);
-}
 async function saveStrategy() {
   if (!editable.value) return;
   const error = strategyError(form.value, payees.value);
@@ -182,16 +190,10 @@ async function saveStrategy() {
     window.$message?.warning(error);
     return;
   }
-  let savedId = '';
   saving.value = true;
   try {
-    const input = toInput(form.value);
-    const result = selectedId.value
-      ? await updateTransferRule(selectedId.value, input)
-      : await createTransferRule(input);
+    const result = await updateTransferRule(props.strategyId, toInput(form.value));
     if (!result.error) {
-      savedId = result.data.id;
-      selectedId.value = result.data.id;
       form.value = asDraft(result.data);
       saved.value = JSON.stringify(form.value);
       await load();
@@ -200,11 +202,17 @@ async function saveStrategy() {
   } finally {
     saving.value = false;
   }
-  if (savedId) emit('saved', savedId);
 }
-function applyTemplate() {
-  if (!preview.value || !canSave.value || saving.value) return;
-  const template = asDraft(preview.value);
+async function applyTemplate(source: TransferRule) {
+  if (!canSave.value || saving.value) return;
+  try {
+    await ElMessageBox.confirm(`将“${source.name}”的规则和执行约束应用到“${form.value.name}”？保存策略后生效。`, '应用模板', {
+      confirmButtonText: '应用此模板', cancelButtonText: '取消'
+    });
+  } catch {
+    return;
+  }
+  const template = asDraft(source);
   form.value = {
     ...form.value,
     name: form.value.name || template.name + ' 副本',
@@ -216,13 +224,100 @@ function applyTemplate() {
   };
   previewId.value = '';
 }
-async function saveAsTemplate() {
-  if (!hasAuth('transfer-rule:create') || saving.value) return;
-  const copy = clone(form.value);
-  selectedId.value = '';
-  previewId.value = '';
-  form.value = { ...copy, name: copy.name + ' 模板', isTemplate: true };
-  saved.value = '';
+function openTemplate(source = defaultStrategy(), id?: string) {
+  editingTemplateId.value = id;
+  templateDraft.value = { ...clone(source), enabled: false, isTemplate: true };
+  templateError.value = '';
+  templateDialog.value = true;
+}
+function saveAsTemplate() {
+  openTemplate({ ...form.value, name: `${form.value.name.slice(0, 98)}模板` });
+}
+async function saveTemplate() {
+  if (saving.value) return;
+  const id = editingTemplateId.value;
+  const draft = templateDraft.value;
+  const error = strategyError(draft, payees.value);
+  if (error) {
+    templateError.value = error;
+    return;
+  }
+  saving.value = true;
+  try {
+    const input = toInput({ ...draft, name: draft.name.trim(), description: draft.description?.trim() });
+    const result = id ? await updateTransferRule(id, input) : await createTransferRule(input);
+    if (result.error) return;
+    strategies.value = [result.data, ...strategies.value.filter(row => row.id !== result.data.id)];
+    if (id === props.strategyId) {
+      form.value = asDraft(result.data);
+      saved.value = JSON.stringify(form.value);
+    }
+    templateSearch.value = '';
+    templateDialog.value = false;
+    window.$message?.success('模板已保存');
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openRename(template: TransferRule) {
+  renameTarget.value = template;
+  templateName.value = template.name;
+  renameDialog.value = true;
+}
+const duplicateRename = computed(() => templates.value.some(item =>
+  item.id !== renameTarget.value?.id && item.name.trim().toLowerCase() === templateName.value.trim().toLowerCase()
+));
+async function renameTemplate() {
+  const target = renameTarget.value;
+  const name = templateName.value.trim();
+  if (!target || !name || duplicateRename.value || saving.value) return;
+  saving.value = true;
+  try {
+    const result = await renameTransferTemplate(target.id, name);
+    if (result.error) return;
+    target.name = result.data.name;
+    if (target.id === props.strategyId) {
+      form.value.name = result.data.name;
+      saved.value = JSON.stringify({ ...JSON.parse(saved.value), name: result.data.name });
+    }
+    renameDialog.value = false;
+    window.$message?.success('模板已改名');
+  } finally {
+    saving.value = false;
+  }
+}
+
+function templateMenu(event: MouseEvent, template?: TransferRule) {
+  if (saving.value) return;
+  const items: MenuItem[] = [];
+  if (template) {
+    items.push({ label: '预览模板规则', run: () => { previewId.value = template.id; } });
+    if (canSave.value) items.push({ label: '应用到当前策略', run: () => applyTemplate(template) });
+    if (hasAuth('transfer-rule:update')) {
+      items.push({ label: '编辑模板', run: () => openTemplate(template.id === props.strategyId ? form.value : asDraft(template), template.id) });
+      items.push({ label: '模板改名', run: () => openRename(template) });
+    }
+    if (hasAuth('transfer-rule:create')) items.push({
+      label: '复制模板', run: () => openTemplate({ ...asDraft(template), name: `${template.name.slice(0, 96)}（副本）` })
+    });
+    if (hasAuth('transfer-rule:delete')) items.push({ label: '删除模板', danger: true, run: () => openTemplateDelete(template) });
+  }
+  if (hasAuth('transfer-rule:create')) items.push({ label: '新增模板', run: () => openTemplate() });
+  if (items.length) menu.value?.open(event, items);
+}
+
+function openTemplateDelete(template: TransferRule) {
+  deleteTarget.value = template;
+  deleteDialog.value = true;
+}
+function templateDeleted(id: string) {
+  strategies.value = strategies.value.filter(rule => rule.id !== id);
+  if (previewId.value === id) previewId.value = '';
+  if (props.strategyId === id) {
+    saved.value = JSON.stringify(form.value);
+    emit('back');
+  }
 }
 function resetDraft() {
   form.value = saved.value ? JSON.parse(saved.value) : defaultStrategy();
@@ -332,8 +427,10 @@ function confirmConstraints() {
 }
 onMounted(async () => {
   if (!(await load())) return;
-  if (strategies.value.some(rule => rule.id === props.strategyId)) {
-    await selectStrategy(props.strategyId);
+  const row = strategies.value.find(rule => rule.id === props.strategyId);
+  if (row) {
+    form.value = asDraft(row);
+    saved.value = JSON.stringify(form.value);
   } else {
     window.$message?.warning('转账策略不存在，请从列表重新选择');
     emit('back');
@@ -353,9 +450,9 @@ onMounted(async () => {
                 <span>{{ form.isTemplate ? '转账模板配置' : '转账策略配置' }}</span>
                 <ElTag v-if="dirty" type="warning" size="small" effect="plain">未保存修改</ElTag>
               </div>
-              <div class="identity-labels" :class="{ 'identity-readonly': !editable }" :inert="!editable">
-                <h1><EditableGroupLabel v-model="form.name" required :max-length="100" placeholder="策略名称" /></h1>
-                <EditableGroupLabel v-model="form.description" class="identity-description" :max-length="500" />
+              <div class="identity-labels">
+                <h1><EditableGroupLabel v-model="form.name" label="策略名称" :readonly="!editable" show-hint required :max-length="100" placeholder="策略名称" /></h1>
+                <EditableGroupLabel v-model="form.description" label="策略说明" :readonly="!editable" class="identity-description" :max-length="500" />
               </div>
             </div>
           </div>
@@ -386,7 +483,7 @@ onMounted(async () => {
             </div>
           </div>
           <div class="panel-search">
-            <ElInput v-model="objectSearch" clearable placeholder="搜索姓名、账号" aria-label="搜索收款账号" />
+            <EpayKeywordSearch v-model="objectSearch" placeholder="搜索姓名、账号" label="搜索收款账号" />
           </div>
           <div class="panel-hint">规则动作直接选择账号；状态与额度在收款列表维护。</div>
           <div class="tree-scroll">
@@ -428,7 +525,7 @@ onMounted(async () => {
                 :disabled="saving || !!preview"
                 @click="saveAsTemplate"
               >
-                另存为模板
+                保存为模板
               </ElButton>
             </div>
           </div>
@@ -436,7 +533,7 @@ onMounted(async () => {
             <strong>预览模板：{{ preview.name }}</strong>
             <p>当前编辑内容保持不变，应用并保存后生效。</p>
             <div class="summary-actions">
-              <ElButton size="small" type="primary" :disabled="!canSave || saving" @click="applyTemplate">应用模板</ElButton>
+              <ElButton size="small" type="primary" :disabled="!canSave || saving" @click="applyTemplate(preview)">应用此模板</ElButton>
               <ElButton size="small" @click="previewId = ''">返回当前策略</ElButton>
             </div>
           </div>
@@ -483,62 +580,30 @@ onMounted(async () => {
           </div>
           <div class="panel-hint">本次任务金额和分配在触发时固定；策略修改从下次触发生效。失败分笔不补转。</div>
         </section>
-        <section class="tree-panel template-panel">
-          <div class="panel-heading">
-            <div>
-              <strong>策略模板</strong>
-              <span class="panel-count">{{ templates.length }} 个</span>
-            </div>
-            <ElButton
-              v-if="hasAuth('transfer-rule:create')"
-              size="small"
-              :disabled="saving"
-              @click="emit('createTemplate')"
-            >
-              新增模板
-            </ElButton>
-          </div>
-          <div class="panel-search">
-            <ElInput v-model="templateSearch" clearable placeholder="搜索模板" aria-label="搜索策略模板" />
-          </div>
-          <div class="panel-hint">点击模板在中栏预览；应用后可继续编辑。修改模板不会改变已有策略。</div>
-          <div class="tree-scroll template-list">
-            <div
-              v-for="template in templates"
-              :key="template.id"
-              class="template-card"
-              :class="{ selected: previewId === template.id }"
-              tabindex="0"
-              role="button"
-              :aria-pressed="previewId === template.id"
-              @click="previewId = template.id"
-              @keydown.enter.self.prevent="previewId = template.id"
-              @keydown.space.self.prevent="previewId = template.id"
-            >
-              <div class="template-title">
-                <strong>{{ template.name }}</strong>
-                <ElButton link size="small" :disabled="saving" @click.stop="selectStrategy(template.id)">编辑</ElButton>
-              </div>
-              <p v-if="template.description" class="template-description">{{ template.description }}</p>
-              <div class="template-constraints">
-                {{ template.rules?.length ?? 1 }} 条规则 · 保留 {{ template.reserveAmount }} 元
-              </div>
-            </div>
-            <ElEmpty v-if="!templates.length" :image-size="70" description="暂无模板，可新增或将当前配置另存为模板" />
-          </div>
-        </section>
+        <StrategyTemplatePanel
+          v-model="previewId"
+          v-model:search="templateSearch"
+          :templates="templates"
+          :can-create="hasAuth('transfer-rule:create')"
+          :busy="saving"
+          empty-text="暂无模板，可新增或将当前策略保存为模板"
+          @create="openTemplate()"
+          @menu="templateMenu"
+        >
+          <template #summary="{ template }">{{ template.rules?.length ?? 1 }} 条规则 · 保留 {{ template.reserveAmount }} 元</template>
+        </StrategyTemplatePanel>
       </div>
       <div class="workspace-footer">
         <div>
           <span v-if="dirty" class="draft-mark">有未保存修改</span>
-          <span v-else>{{ selectedId ? '配置已保存' : '新建配置' }}</span>
+          <span v-else>配置已保存</span>
           <span class="footer-note">保存后从下一次触发生效。</span>
         </div>
         <div class="footer-buttons">
           <ElButton :disabled="!dirty || saving" @click="resetDraft">撤销修改</ElButton
           ><ElButton
             type="primary"
-            :disabled="!editable || (!dirty && !!selectedId)"
+            :disabled="!editable || !dirty"
             :loading="saving"
             @click="saveStrategy"
             >保存{{ form.isTemplate ? '模板' : '策略' }}</ElButton
@@ -546,6 +611,50 @@ onMounted(async () => {
         </div>
       </div>
     </ElCard>
+    <StrategyTemplateDialog
+      v-model="templateDialog"
+      v-model:name="templateDraft.name"
+      v-model:description="templateDraft.description"
+      v-model:rules="templateDraft.rules"
+      :template-id="editingTemplateId"
+      :templates="templates"
+      :tree-nodes="templateNodes"
+      :new-rule="defaultRule"
+      :saving="saving"
+      @save="saveTemplate"
+    >
+      <template #rule="{ index }"><RuleForm v-model="templateDraft.rules[index]" :payees="payees" /></template>
+      <template #constraints><TransferConstraintsForm v-model="templateDraft" /></template>
+      <template #feedback><ElAlert v-if="templateError" type="warning" :closable="false" :title="templateError" /></template>
+      <template #note>应用模板会复制转账规则和执行约束。修改模板不影响已应用的策略。</template>
+    </StrategyTemplateDialog>
+    <ElDialog
+      v-model="renameDialog"
+      title="模板改名"
+      width="min(460px, 95vw)"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!saving"
+      :show-close="!saving"
+    >
+      <ElForm label-position="top" :disabled="saving" @submit.prevent="renameTemplate">
+        <ElFormItem label="模板名称" required :error="duplicateRename ? '模板名称已存在' : ''">
+          <ElInput v-model="templateName" maxlength="100" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton :disabled="saving" @click="renameDialog = false">取消</ElButton>
+        <ElButton type="primary" :disabled="!templateName.trim() || duplicateRename" :loading="saving" @click="renameTemplate">保存名称</ElButton>
+      </template>
+    </ElDialog>
+    <EpayDeleteDialog
+      v-model:visible="deleteDialog"
+      kind="转账模板"
+      :target-id="deleteTarget?.id ?? ''"
+      :target-name="deleteTarget?.name ?? ''"
+      :check="fetchTransferRuleDeleteCheck"
+      :remove="deleteTransferRule"
+      @deleted="templateDeleted"
+    />
     <TreeContextMenu ref="menu" />
     <ElDialog
       v-model="ruleDialog"
@@ -566,21 +675,7 @@ onMounted(async () => {
       >
     </ElDialog>
     <ElDialog v-model="constraintsDialog" title="执行约束与通知" width="min(520px, 95vw)" :close-on-click-modal="false">
-      <ElForm label-position="top" :disabled="!editable">
-        <ElFormItem label="保留余额（元）"
-          ><ElInput v-model="constraintsDraft.reserveAmount" inputmode="decimal"
-        /></ElFormItem>
-        <ElFormItem label="手续费预留（元）"
-          ><ElInput v-model="constraintsDraft.feeBuffer" inputmode="decimal"
-        /></ElFormItem>
-        <ElFormItem label="每次最小转账金额（元）"
-          ><ElInput v-model="constraintsDraft.minAmount" inputmode="decimal"
-        /></ElFormItem>
-        <ElFormItem label="每个环境每日转出限额（元）"
-          ><ElInput v-model="constraintsDraft.dailyLimit" clearable placeholder="留空不限" inputmode="decimal"
-        /></ElFormItem>
-        <p class="text-muted text-12px">在 Telegram 设置 → 通知发送设置中选择转账结果和扫码二维码的接收群。接收群的业务范围需包含付款环境。</p>
-      </ElForm>
+      <TransferConstraintsForm v-model="constraintsDraft" :disabled="!editable" />
       <template #footer
         ><ElButton @click="constraintsDialog = false">取消</ElButton
         ><ElButton v-if="editable" type="primary" @click="confirmConstraints">确定</ElButton></template
@@ -589,6 +684,7 @@ onMounted(async () => {
   </div>
 </template>
 
+<style scoped src="../../../strategy-center/modules/strategy-panel.css"></style>
 <style scoped>
 .transfer-workspace {
   display: flex;
@@ -603,9 +699,7 @@ onMounted(async () => {
 .workspace-card :deep(.el-card__body) {
   padding: 0;
 }
-.workspace-footer,
-.panel-heading,
-.template-title {
+.workspace-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -688,9 +782,6 @@ onMounted(async () => {
   min-width: 0;
   width: 100%;
 }
-.identity-readonly {
-  pointer-events: none;
-}
 .status-note {
   color: var(--el-text-color-secondary);
   font-size: 12px;
@@ -700,10 +791,6 @@ onMounted(async () => {
 }
 .panel-heading-actions :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-.template-title strong,
-.template-description {
-  overflow-wrap: anywhere;
 }
 .rule-editor-body {
   max-height: 68vh;
@@ -722,63 +809,6 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
 }
 
-.workspace-columns {
-  display: grid;
-  grid-template-columns: minmax(300px, 1.05fr) minmax(340px, 1.4fr) minmax(240px, 0.85fr);
-  height: clamp(480px, calc(100dvh - 370px), 760px);
-  gap: 16px;
-  padding: 16px;
-  background: var(--el-fill-color-extra-light);
-}
-.tree-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
-.panel-heading {
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  min-height: 58px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.panel-heading > div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.panel-heading strong {
-  font-size: 14px;
-}
-.panel-count {
-  padding: 2px 8px;
-  border-radius: 5px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.panel-search {
-  padding: 12px 16px 0;
-}
-.panel-hint {
-  padding: 12px 16px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--el-text-color-secondary);
-}
-.tree-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 4px 8px 12px;
-}
 :deep(.el-tree-node__content) {
   height: 36px;
   border-radius: 5px;
@@ -803,22 +833,6 @@ onMounted(async () => {
   white-space: nowrap;
   font-size: 13px;
 }
-.node-more {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: 20px;
-  cursor: pointer;
-}
-.node-more:hover,
-.node-more:focus-visible {
-  color: var(--el-color-primary);
-  background: var(--el-fill-color-light);
-}
 .object-detail {
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-extra-light);
@@ -838,42 +852,6 @@ onMounted(async () => {
 }
 .summary-actions :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-.template-list {
-  padding: 3px 12px 12px;
-}
-.template-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 7px;
-  padding: 12px;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
-.template-card:hover {
-  border-color: var(--el-color-primary-light-5);
-}
-.template-card:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.template-card.selected {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-.template-title {
-  margin-bottom: 8px;
-  font-size: 13px;
-}
-.template-description {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-}
-.template-constraints {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.7;
 }
 .workspace-footer {
   flex-wrap: wrap;
@@ -896,58 +874,6 @@ onMounted(async () => {
 }
 .footer-buttons :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-@container transfer-workspace (max-width: 1050px) {
-  .workspace-columns {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-    height: auto;
-  }
-  .tree-scroll {
-    min-height: 280px;
-    max-height: 440px;
-  }
-  .template-panel {
-    grid-column: 1 / -1;
-  }
-  .template-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-content: start;
-    align-items: start;
-    gap: 12px;
-    min-height: 120px;
-    max-height: 300px;
-  }
-  .template-card {
-    margin-bottom: 0;
-  }
-  .template-list :deep(.el-empty) {
-    grid-column: 1 / -1;
-  }
-}
-@container transfer-workspace (max-width: 640px) {
-  .workspace-columns {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 12px;
-    gap: 12px;
-  }
-  .tree-scroll {
-    min-height: 220px;
-    max-height: 380px;
-  }
-  .template-list {
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 120px;
-  }
-  .workspace-footer {
-    padding: 14px 16px;
-  }
-  .footer-buttons {
-    width: 100%;
-  }
-  .footer-buttons :deep(.el-button) {
-    flex: 1 1 auto;
-  }
 }
 @media (max-width: 640px) {
   .workspace-toolbar {
