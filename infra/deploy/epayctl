@@ -301,6 +301,32 @@ def daemon():
         time.sleep(2)
 
 
+def execute(action, target):
+    try:
+        rows = releases()
+        catalog(rows)
+    except Exception:
+        record(checkError='版本检查失败，请检查所选更新服务器的网络连接与读取权限')
+        raise
+    if action == 'check-update':
+        sync_available_agent(rows)
+        print(json.dumps(status().get('available', {}), ensure_ascii=False))
+        return
+    kind = 'agent' if action == 'sync-agent' else 'center'
+    if kind not in rows:
+        raise RuntimeError('尚无对应正式版')
+    release = rows[kind]
+    if target and target != release['version']:
+        raise ValueError('可用版本已变化，请重新确认')
+    record(result='正在同步 ' + release['tag_name'])
+    if kind == 'agent':
+        agent(release)
+        record(result='本站采集端版本已同步')
+    else:
+        center(release)
+        sync_available_agent(rows)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', choices=['status', 'check-update', 'update', 'sync-agent', 'worker', 'daemon', 'set-region'])
@@ -322,6 +348,7 @@ def main():
             set_region(args.region)
             return
         target = None
+        upgrade_request = None
         if action == 'worker':
             paths = sorted(REQUESTS.iterdir())
             selections = [p for p in paths if re.fullmatch(r'region-[0-9]{13}-[0-9]{24}-(cn|global)', p.name)]
@@ -333,43 +360,36 @@ def main():
                 if path in selections:
                     continue
                 match = re.fullmatch(r'(update|sync-agent)-(' + VERSION + ')|check-update', path.name)
-                path.unlink()
                 if match:
                     action, target = match.group(1) or 'check-update', match.group(2)
+                    if action == 'update':
+                        # 保留同名请求直到升级结束，使不同会话的重复提交也能合并。
+                        if path.stat().st_size:
+                            if newer(target, status().get('current')):
+                                record(upgradeError='上次升级被中断，请检查部署日志后重试')
+                            path.unlink()
+                            return
+                        path.write_bytes(b'running')
+                        upgrade_request = path
+                    else:
+                        path.unlink()
                     break
+                path.unlink()
             else:
                 if not selections:
                     return
                 action = 'check-update'
         try:
-            rows = releases()
-            catalog(rows)
-        except Exception:
-            record(checkError='版本检查失败，请检查所选更新服务器的网络连接与读取权限')
-            raise
-        if action == 'check-update':
-            sync_available_agent(rows)
-            print(json.dumps(status().get('available', {}), ensure_ascii=False))
-            return
-        kind = 'agent' if action == 'sync-agent' else 'center'
-        if kind not in rows:
-            sys.exit('尚无对应正式版')
-        release = rows[kind]
-        if target and target != release['version']:
-            record(result='可用版本已变化，请重新确认')
-            return
-        record(result='正在同步 ' + release['tag_name'])
-        try:
-            if kind == 'agent':
-                agent(release)
-                record(result='本站采集端版本已同步')
-            else:
-                center(release)
-                sync_available_agent(rows)
+            if action == 'update':
+                record(upgradeError='')
+            execute(action, target)
         except Exception as error:
             message = str(error) if isinstance(error, (RuntimeError, ValueError)) else '更新中断，请查看更新器容器日志和备份路径'
-            record(result=message)
+            record(result=message, **({'upgradeError': message} if action == 'update' else {}))
             raise
+        finally:
+            if upgrade_request is not None:
+                upgrade_request.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

@@ -9,17 +9,17 @@ import { getServiceBaseURL } from '@/utils/service';
 import { useAutoRefresh } from '@/hooks/common/auto-refresh';
 import { hasReleaseUpdate } from '@/utils/release';
 
-const props = defineProps<{ kind: 'center' | 'agent'; plain?: boolean }>();
+const props = defineProps<{ kind: 'center' | 'agent' }>();
 type Release = { version: string; html_url: string; published_at: string };
 type Region = 'cn' | 'global';
-type Status = { region?: Region; pendingRegion?: Region; managed: boolean; source?: boolean; current?: string; agent?: string; agentError?: string; checked?: string; result?: string; checkError?: string; available?: Partial<Record<'center' | 'agent', Release>> };
+type Upgrade = { version: string; phase: 'queued' | 'running' };
+type Status = { region?: Region; pendingRegion?: Region; managed: boolean; source?: boolean; current?: string; agent?: string; agentError?: string; checked?: string; upgrade?: Upgrade | null; upgradeError?: string; checkError?: string; available?: Partial<Record<'center' | 'agent', Release>> };
 const { hasAuth } = useAuth();
 const data = ref<Status>();
 const busy = ref(false);
 const latest = computed(() => data.value?.available?.[props.kind]);
 const installed = computed(() => props.kind === 'center' ? data.value?.current : data.value?.agent);
 const installedLabel = computed(() => {
-  if (data.value?.source && installed.value) return `本地开发版（基线 v${installed.value}）`;
   if (installed.value === '0.0.0') return '源码构建';
   if (installed.value) return `v${installed.value}`;
   if (data.value?.managed) return '等待读取版本';
@@ -28,6 +28,13 @@ const installedLabel = computed(() => {
 const updateAvailable = computed(() => hasReleaseUpdate(installed.value, latest.value?.version));
 const hasAgentPackage = computed(() => Boolean(installed.value && installed.value !== '0.0.0'));
 const readFailed = ref(false);
+const upgrade = computed(() => props.kind === 'center' ? data.value?.upgrade : null);
+const centerStatus = computed(() => {
+  if (upgrade.value) return upgrade.value.phase === 'running' ? '升级中' : '等待升级';
+  if (data.value?.upgradeError || data.value?.checkError || readFailed.value || !latest.value) return '';
+  if (updateAvailable.value) return '有新版本';
+  return installed.value === latest.value.version ? '已是最新' : '';
+});
 const agentStatus = computed(() => {
   if (!latest.value || readFailed.value || data.value?.checkError || data.value?.agentError) return '';
   if (updateAvailable.value) return '有新版本';
@@ -46,7 +53,7 @@ async function read() {
 onMounted(read);
 useAutoRefresh(read, undefined, () => Boolean(data.value && (props.kind === 'agent' || data.value.managed || data.value.source)) && !busy.value);
 async function selectRegion(value: unknown) {
-  if (busy.value || (value !== 'cn' && value !== 'global')) return;
+  if (busy.value || upgrade.value || (value !== 'cn' && value !== 'global')) return;
   readRevision += 1;
   busy.value = true;
   try {
@@ -56,12 +63,20 @@ async function selectRegion(value: unknown) {
 }
 
 async function submit(check: boolean) {
+  if (busy.value || upgrade.value || data.value?.pendingRegion) return;
   const version = latest.value?.version;
-  if (!check && !await ElMessageBox.confirm(`${actionLabel.value} v${version}？${props.kind === 'center' ? '升级期间中心服务会短暂停止。' : '兼容的旧版采集端将在下次心跳接收更新指令。'}`, '确认版本').then(() => true, () => false)) return;
+  if (!check && (!version || !updateAvailable.value)) return;
   busy.value = true;
+  readRevision += 1;
   try {
+    if (!check && !await ElMessageBox.confirm(`${actionLabel.value} v${version}？${props.kind === 'center' ? '升级期间中心服务会短暂停止。' : '兼容的旧版采集端将在下次心跳接收更新指令。'}`, '确认版本').then(() => true, () => false)) return;
     const action = check ? 'check-update' : props.kind === 'center' ? 'update' : 'sync-agent';
-    const result = await request({ url: '/releases/requests', method: 'post', data: { action, version, kind: props.kind } });
+    const result = await request<{ upgrade?: Upgrade }>({ url: '/releases/requests', method: 'post', data: { action, version, kind: props.kind } });
+    if (action === 'update' && data.value) {
+      if (!result.error) data.value.upgrade = result.data?.upgrade ?? { version: version!, phase: 'queued' };
+      await read();
+      return;
+    }
     if (!result.error && data.value?.source) {
       await read();
     } else if (!result.error) window.$message?.success('已提交到部署机');
@@ -134,39 +149,45 @@ async function notifyAgents() {
     <div v-else-if="readFailed" role="status">读取版本失败 <ElButton text type="primary" @click="read">重试</ElButton></div>
     <ElSkeleton v-else :rows="2" />
   </template>
-  <ElCard v-else-if="kind === 'center' && data" :class="plain ? 'release-panel--plain' : 'card-wrapper'" :shadow="plain ? 'never' : undefined">
-    <template v-if="!plain" #header>中心版本</template>
-    <ElDescriptions :column="1">
-      <ElDescriptionsItem label="当前版本">
-        {{ installedLabel }}
-      </ElDescriptionsItem>
-      <ElDescriptionsItem v-if="kind === 'center' && (data.managed || data.source)" label="更新服务器">
-        <ElRadioGroup
-          :model-value="data.pendingRegion || data.region || 'global'"
-          :disabled="busy || !hasAuth('system-setting:update')"
-          aria-label="更新服务器"
-          @change="selectRegion"
-        >
-          <ElRadioButton value="cn">国内</ElRadioButton>
-          <ElRadioButton value="global">境外</ElRadioButton>
-        </ElRadioGroup>
-        <span v-if="data.pendingRegion" class="ml-8px">等待切换</span>
-      </ElDescriptionsItem>
-      <ElDescriptionsItem v-if="data.managed || data.source" label="GitHub 正式版">
-        <ElLink v-if="latest" :href="latest.html_url" target="_blank" rel="noopener noreferrer">v{{ latest.version }} · 更新说明</ElLink>
-        <span v-else>尚未发现正式版</span>
-      </ElDescriptionsItem>
-      <ElDescriptionsItem v-if="data.source && updateAvailable" label="更新方式">当前为源码开发实例，可从上方更新说明查看版本差异。</ElDescriptionsItem>
-      <ElDescriptionsItem v-if="data.checked" label="上次成功检查">{{ new Date(data.checked).toLocaleString() }}</ElDescriptionsItem>
-      <ElDescriptionsItem v-if="data.checkError || data.result" label="状态">{{ data.checkError || data.result }}</ElDescriptionsItem>
-    </ElDescriptions>
-    <div class="mt-16px flex flex-wrap gap-8px">
-      <template v-if="(data.managed || data.source) && hasAuth('system-setting:update')">
-        <ElButton :disabled="busy || Boolean(data.pendingRegion)" @click="submit(true)">检查更新</ElButton>
-        <ElButton v-if="data.managed && updateAvailable" type="primary" :disabled="busy || Boolean(data.pendingRegion)" @click="submit(false)">{{ actionLabel }}</ElButton>
-      </template>
+  <section v-else-if="kind === 'center' && data" class="center-release" aria-label="中心版本信息">
+    <div class="center-release-versions">
+      <div>
+        <div class="agent-release-label">{{ data.source ? '本地源码基线' : '当前版本' }}</div>
+        <strong class="center-version">{{ installedLabel }}</strong>
+      </div>
+      <div>
+        <div class="agent-release-label">GitHub 正式版</div>
+        <strong class="center-version">{{ latest ? `v${latest.version}` : '—' }}</strong>
+      </div>
     </div>
-  </ElCard>
+    <div v-if="latest || centerStatus" class="agent-release-row">
+      <ElTag v-if="centerStatus" size="small" effect="plain" :type="upgrade ? 'primary' : updateAvailable ? 'warning' : 'success'">{{ centerStatus }}</ElTag>
+      <ElLink v-if="latest" :href="latest.html_url" target="_blank" rel="noopener noreferrer" type="primary">更新说明</ElLink>
+    </div>
+    <div v-if="data.managed || data.source" class="agent-release-row center-release-region">
+      <span>更新线路</span>
+      <ElRadioGroup :model-value="data.pendingRegion || data.region || 'global'"
+        :disabled="busy || Boolean(upgrade) || !hasAuth('system-setting:update')" aria-label="更新线路" @change="selectRegion">
+        <ElRadioButton value="cn">国内</ElRadioButton>
+        <ElRadioButton value="global">境外</ElRadioButton>
+      </ElRadioGroup>
+    </div>
+    <small v-if="data.pendingRegion">正在切换线路</small>
+    <small v-if="data.checked">上次检查 {{ new Date(data.checked).toLocaleString() }}</small>
+    <span v-if="data.checkError || data.upgradeError || readFailed" class="agent-release-error" role="status">
+      {{ data.checkError || data.upgradeError || '版本信息刷新失败' }}
+    </span>
+    <small v-if="data.source && updateAvailable">本地开发实例通过源码更新。</small>
+    <div v-if="(data.managed || data.source) && hasAuth('system-setting:update')" class="agent-release-actions">
+      <ElButton :disabled="busy || Boolean(upgrade || data.pendingRegion)" @click="submit(true)">检查更新</ElButton>
+      <ElButton v-if="data.managed && (updateAvailable || upgrade)" type="primary"
+        :disabled="busy || Boolean(upgrade || data.pendingRegion)" @click="submit(false)">
+        {{ upgrade ? `${centerStatus} v${upgrade.version}` : '升级中心' }}
+      </ElButton>
+    </div>
+  </section>
+  <ElSkeleton v-else-if="kind === 'center' && !readFailed" :rows="2" />
+  <ElButton v-else-if="kind === 'center'" text type="primary" @click="read">重新读取版本</ElButton>
 </template>
 
 <style scoped>
@@ -183,11 +204,10 @@ async function notifyAgents() {
 .agent-release-downloads { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--el-border-color-lighter); }
 .agent-release-error { margin: 12px 0 0; color: var(--el-color-danger); }
 
-/* 嵌入设置抽屉时去掉卡片外框，由所在分组提供边框和标题 */
-.release-panel--plain {
-  --el-card-padding: 0px;
-  --el-card-bg-color: transparent;
-  border: 0;
-  box-shadow: none;
-}
+.center-release { display: grid; min-width: 0; gap: 12px; }
+.center-release-versions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.center-version { color: var(--epay-heading); font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; }
+.center-release-region { padding-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
+.center-release small { color: var(--epay-muted); }
+.center-release .agent-release-error { margin: 0; }
 </style>

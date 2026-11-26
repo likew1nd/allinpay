@@ -10,6 +10,6 @@ const { hasAuth } = useAuth();
 <template>
   <section v-if="hasAuth('system-setting:read')" class="appearance-group" aria-labelledby="appearance-release-title">
     <h3 id="appearance-release-title" class="appearance-title">版本更新</h3>
-    <ReleasePanel kind="center" plain />
+    <ReleasePanel kind="center" />
   </section>
 </template>

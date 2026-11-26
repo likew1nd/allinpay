@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, ServiceUnavailableException, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Post, ServiceUnavailableException, StreamableFile, UseGuards } from '@nestjs/common';
 import { AuthZGuard, UsePermissions } from '@lib/infra/casbin';
 import { ApiRes } from '@lib/infra/rest/res.response';
 import { createReadStream } from 'node:fs';
@@ -24,17 +24,27 @@ export class ReleaseController {
       const file = process.env.EPAY_SOURCE_VERSION_FILE;
       return ApiRes.success(file ? await this.sourceStatus(file) : { managed: false });
     }
-    const content = await readFile(join(root, 'state/release.json'), 'utf8').catch(error => {
-      if (error.code === 'ENOENT') return '{}';
-      throw error;
-    });
-    const data = JSON.parse(content);
+    return ApiRes.success(await this.managedStatus(root));
+  }
+
+  private async managedStatus(root: string) {
     const names = await readdir(join(root, 'requests')).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return [];
       throw error;
     });
     const pending = names.filter(name => /^region-\d{13}-\d{24}-(cn|global)$/.test(name)).sort().pop();
-    return ApiRes.success({ managed: true, region: 'global', ...data, pendingRegion: pending?.split('-').pop() });
+    const name = names.find(item => /^update-\d+\.\d+\.\d+$/.test(item));
+    const entry = name ? await stat(join(root, 'requests', name)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }) : null;
+    const upgrade = name && entry ? { version: name.slice(7), phase: entry.size ? 'running' : 'queued' } : null;
+    const content = await readFile(join(root, 'state/release.json'), 'utf8').catch(error => {
+      if (error.code === 'ENOENT') return '{}';
+      throw error;
+    });
+    const data = JSON.parse(content);
+    return { managed: true, region: 'global', ...data, pendingRegion: pending?.split('-').pop(), upgrade };
   }
 
   @Get('agent')
@@ -85,12 +95,19 @@ export class ReleaseController {
       throw new BadRequestException('无效的发布版本');
     }
     const name = action === 'check-update' ? action : `${action}-${version}`;
+    if (action === 'update') {
+      const status = await this.managedStatus(root);
+      if (status.upgrade) return ApiRes.success({ queued: true, upgrade: status.upgrade });
+      if (version !== status.available?.center?.version || !status.current || version!.localeCompare(status.current, 'en', { numeric: true }) <= 0) {
+        throw new ConflictException('可用版本已变化，请重新检查更新');
+      }
+    }
     try {
       await writeFile(join(root, 'requests', name), '', { flag: 'wx' });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
-    return ApiRes.success({ queued: true });
+    return ApiRes.success(action === 'update' ? { queued: true, upgrade: { version, phase: 'queued' } } : { queued: true });
   }
 
   @Get('installer/:kind')
