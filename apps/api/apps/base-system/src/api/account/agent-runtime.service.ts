@@ -14,6 +14,7 @@ import type { AgentCommandReceiptDto, AgentLogsDto, AgentTaskResultDto, Environm
 import type { ScriptMonitorHeartbeatDto } from './dto/script-runtime.dto';
 import type { AgentTask, EnvironmentProfile } from '../../../../../../../contracts/collector-agent';
 import { EXECUTING_TRANSFER_STATUSES } from '../transfer/transfer-calc';
+import { RestrictionChannelService } from './restriction-channel.service';
 
 const LEASE_MS = 90_000;
 const ACTIVE = ['CLAIMED', 'RUNNING'];
@@ -50,7 +51,8 @@ export function scriptVersionAtLeast(installed: string, target: string): boolean
 
 @Injectable()
 export class AgentRuntimeService {
-  constructor(private readonly prisma: PrismaService, private readonly notifications?: NotificationService) {}
+  constructor(private readonly prisma: PrismaService, private readonly notifications?: NotificationService,
+    private readonly restrictionChannels?: RestrictionChannelService) {}
 
   private async fence(tx: Tx, id: string, sessionId: string) {
     await tx.$queryRaw(Prisma.sql`SELECT id FROM collector WHERE id = ${id} FOR UPDATE`);
@@ -325,6 +327,10 @@ export class AgentRuntimeService {
       const passwordRejected = monitorAccount && dto.status === 'PASSWORD_REJECTED';
       const seconds = settings.minRefreshSeconds + Math.floor(Math.random() * (settings.maxRefreshSeconds - settings.minRefreshSeconds + 1));
       const now = new Date();
+      const restriction = monitorAccount && this.restrictionChannels
+        ? await this.restrictionChannels.observe(tx, account, dto, now)
+        : null;
+      const inspection = restriction ? restriction.inspection : dto.inspection;
       // 只有本轮成功读取余额才推进快照时间；失败时保留刷新屏障，不能用旧余额继续付款。
       const freshBalance = monitorAccount && dto.status === 'LOGGED_IN' && dto.inspection?.funds?.availableBalance != null;
       const observedAt = new Date(dto.completedAt);
@@ -335,8 +341,10 @@ export class AgentRuntimeService {
           status: statuses[dto.status], browserState: dto.status, lastSeenAt: now,
           lastError: passwordRejected ? '登录密码错误，已自动暂停监控和转账' : safeError(dto.error),
           ...(passwordRejected ? { monitoringEnabled: false, transferEnabled: false } : {}),
-          metadata: { source: 'WINDOWS_AGENT', taskId: dto.taskId, tabs: dto.tabs as unknown as Prisma.InputJsonValue, observedAt: dto.completedAt },
-          ...buildInspectionUpdate(dto.inspection, now, { restrictionActive: account.restrictionActive, judicialActive: account.judicialActive }),
+          metadata: { source: 'WINDOWS_AGENT', taskId: dto.taskId, tabs: dto.tabs as unknown as Prisma.InputJsonValue,
+            observedAt: dto.completedAt, ...(restriction && { restrictionKinds: restriction.restrictionKinds }) },
+          ...buildInspectionUpdate(inspection, now, { restrictionActive: account.restrictionActive, judicialActive: account.judicialActive }),
+          ...restriction?.observed,
         } : {}),
         ...(balanceFresh ? { balanceAt: observedAt, transferRefreshRequired: false } : dto.inspection?.funds?.availableBalance != null ? { balanceAt: null } : {}),
         scriptNextAt: newerRequest || dto.yieldedForTransfer ? now : new Date(Date.now() + seconds * 1000),
@@ -350,7 +358,9 @@ export class AgentRuntimeService {
           data: { status: 'CANCELLED', completedAt: now, resultNote: '登录密码错误，已自动暂停转账' },
         });
       }
-      if (monitorAccount && this.notifications) await this.notifications.account(tx, account.id, dto.taskId, dto.status, dto.inspection);
+      if (monitorAccount && this.notifications) {
+        await this.notifications.account(tx, account.id, dto.taskId, dto.status, inspection, restriction?.defer);
+      }
       await tx.collectorCommand.update({ where: { id: dto.taskId }, data: { status: dto.status === 'ENV_UNAVAILABLE' ? 'FAILED' : 'SUCCEEDED', completedAt: new Date(), leaseUntil: null,
         result: { digest: digest(dto), status: dto.status, completedAt: dto.completedAt } } });
       // 本轮确认已登录：清掉冷却和计数。登录成功不应遗留冷却，否则下一轮要白等到冷却过期

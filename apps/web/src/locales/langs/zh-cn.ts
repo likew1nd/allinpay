@@ -216,6 +216,11 @@ const local: App.I18n.Schema = {
   },
   page: {
     scriptSettings: {
+      closeRestrictedChannels: '账号受限时自动关闭关联通道',
+      closeRestrictedChannelsHint: '开启并保存后立即处理当前受限账号。后续巡检发现商家资金限制或司法限制时，自动关闭其已启用的关联通道。',
+      restoreRecoveredChannels: '账号解除限制时自动恢复通道',
+      restrictionAutomationSaved: '设置已保存，正在处理符合条件的通道',
+      restoreRecoveredChannelsHint: '开启并保存后立即处理符合恢复条件的通道。巡检确认两类限制均已解除后，只恢复此前由本功能关闭且没有其他停用原因的通道。',
       monitorDescription: '各采集端独立巡检，可设置每端同时轮询的环境数。',
       pollingMode: '轮询方式',
       serialPolling: '串行',

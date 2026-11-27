@@ -6,11 +6,13 @@ import { AccountService } from './account.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { ScriptBundleService } from './script-bundle.service';
 import { ScriptRuntimeController } from './script-runtime.controller';
+import { SiteModule } from '../site';
+import { RestrictionChannelService } from './restriction-channel.service';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, SiteModule],
   controllers: [AccountController, ScriptRuntimeController],
-  providers: [AccountService, AgentRuntimeService, ScriptBundleService],
+  providers: [AccountService, AgentRuntimeService, ScriptBundleService, RestrictionChannelService],
   exports: [AccountService],
 })
 export class AccountModule {}

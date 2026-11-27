@@ -41,6 +41,7 @@ import { readMonitoringLogs } from './monitoring-log';
 import { compareAccountOrder } from './account-order';
 import { publicScriptSettings } from './captcha-credentials';
 import { publicSettingsFields } from './script-settings.fields';
+import { RestrictionChannelService } from './restriction-channel.service';
 
 const FUND_ACCOUNT_INCLUDE = {
   account: { select: { id: true, name: true, externalId: true, status: true, balance: true, balanceAt: true } },
@@ -72,7 +73,8 @@ const DEFAULT_SCRIPT_SETTINGS = {
 
 @Injectable()
 export class AccountService {
-  constructor(private readonly prisma: PrismaService, private readonly runtime: AgentRuntimeService, private readonly notifications?: NotificationService) {}
+  constructor(private readonly prisma: PrismaService, private readonly runtime: AgentRuntimeService, private readonly notifications?: NotificationService,
+    private readonly restrictionChannels?: RestrictionChannelService) {}
 
   async getScriptSettings() {
     const settings = await this.prisma.scriptSetting.upsert({
@@ -123,6 +125,8 @@ export class AccountService {
       environmentSyncMinutes: dto.environmentSyncMinutes ?? existing?.environmentSyncMinutes ?? 30,
       balanceFreshMinutes: dto.balanceFreshMinutes ?? existing?.balanceFreshMinutes ?? 10,
       qrWaitMinutes: dto.qrWaitMinutes ?? existing?.qrWaitMinutes ?? 8,
+      ...(dto.closeRestrictedChannels !== undefined && { closeRestrictedChannels: dto.closeRestrictedChannels }),
+      ...(dto.restoreRecoveredChannels !== undefined && { restoreRecoveredChannels: dto.restoreRecoveredChannels }),
       sliderOffsetPx: dto.sliderOffsetPx ?? existing?.sliderOffsetPx ?? 10,
       captchaProvider: provider,
       ttshituUsername,
@@ -144,10 +148,20 @@ export class AccountService {
     };
     const settings = await this.prisma.$transaction(async tx => {
       await tx.collector.updateMany({ data: { configRevision: { increment: 1 } } });
-      return tx.scriptSetting.upsert({
+      const automationChanged = dto.closeRestrictedChannels !== undefined || dto.restoreRecoveredChannels !== undefined;
+      const previous = automationChanged ? (await tx.$queryRaw<{ closeRestrictedChannels: boolean; restoreRecoveredChannels: boolean }[]>`
+        SELECT close_restricted_channels AS closeRestrictedChannels, restore_recovered_channels AS restoreRecoveredChannels
+        FROM script_setting WHERE id = 'default' FOR UPDATE`)[0] : undefined;
+      const saved = await tx.scriptSetting.upsert({
         where: { id: SCRIPT_SETTING_ID }, create: { id: SCRIPT_SETTING_ID, ...data }, update: data, select: publicSettingsFields,
       });
-    });
+      if (automationChanged && this.restrictionChannels) {
+        await this.restrictionChannels.enqueueExisting(tx,
+          saved.closeRestrictedChannels && !previous?.closeRestrictedChannels,
+          saved.restoreRecoveredChannels && !previous?.restoreRecoveredChannels);
+      }
+      return saved;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     return publicScriptSettings(settings);
   }
 
@@ -567,6 +581,7 @@ export class AccountService {
     const account = await tx.account.findUnique({ where: { id }, select: {
       id: true, collectorId: true, profilePresent: true, monitoringEnabled: true,
       transferListed: true, transferEnabled: true, transferRuleId: true,
+      credentials: { select: { paymentPasswordEncrypted: true } },
     } });
     if (!account) throw new NotFoundException('账号不存在');
     if (account.collectorId !== owner.collectorId) throw new ConflictException('环境归属已变化，请刷新后重试');
@@ -579,6 +594,9 @@ export class AccountService {
       if (!account.collectorId || !account.profilePresent) throw new NotFoundException('环境不存在或未关联采集端');
       const monitoringEnabled = mode !== 'OFF';
       const transferEnabled = mode === 'TRANSFER';
+      if (transferEnabled && !account.credentials?.paymentPasswordEncrypted) {
+        throw new ConflictException('请先为该环境设置支付密码，再开启自动转账');
+      }
       const monitoringChanged = account.monitoringEnabled !== monitoringEnabled;
       if (monitoringChanged) {
         await tx.collector.update({ where: { id: account.collectorId }, data: { configRevision: { increment: 1 } } });

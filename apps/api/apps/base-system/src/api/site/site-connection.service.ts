@@ -222,6 +222,13 @@ export class SiteConnectionService implements OnApplicationBootstrap, OnModuleDe
           select: { id: true },
         });
         if (!pending) continue;
+        if (Date.parse(typed.expiresAt) > Date.now() && typed.action === 'SET_CHANNEL_STATUS' &&
+          typed.desiredState.status === 0 && typed.target.channelCode) {
+          await this.prisma.restrictionChannelHold.updateMany({
+            where: { channelId: `${id}:channel:${typed.target.channelCode}`, state: { in: ['CLOSED', 'CLOSING', 'RESTORING'] } },
+            data: { state: 'BLOCKED' },
+          });
+        }
         const result = Date.parse(typed.expiresAt) <= Date.now()
           ? { status: 'EXPIRED' as const, failureReason: 'COMMAND_EXPIRED' }
           : await adapter.control(typed);

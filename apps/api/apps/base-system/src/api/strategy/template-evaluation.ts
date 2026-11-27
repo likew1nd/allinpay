@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { auditAdjustment } from './adjustment-audit';
+import { queueNotification } from '../notification/notification.service';
 import { mapOrderStatus, summarizeOrderCounts } from '../site/order-mapping';
 import { storedOrderRun } from '../site/order-snapshot';
 import {
@@ -601,6 +602,31 @@ export async function evaluateStrategyTarget(
     },
   });
   if (applicationAudit) await auditAdjustment(tx, adjustment.id, true);
+  if (command.action === 'SET_CHANNEL_STATUS' && command.desiredState.status === 0 && command.noop) {
+    await tx.restrictionChannelHold.updateMany({
+      where: { channelId: channel.id, state: { in: ['CLOSED', 'CLOSING', 'RESTORING'] } },
+      data: { state: 'BLOCKED' },
+    });
+  }
+  if (!command.noop) {
+    const targetName = [
+      command.target.groupCode && `轮询组 ${command.target.groupCode}`,
+      (command.desiredState.channelCode ?? command.target.channelCode) &&
+        `通道 ${command.desiredState.channelCode ?? command.target.channelCode}`,
+    ].filter(Boolean).join(' / ');
+    const actionName = {
+      SET_CHANNEL_STATUS: command.desiredState.status === 1 ? '开启通道' : '关闭通道',
+      SET_POLLING_GROUP_STATUS: command.desiredState.status === 1 ? '开启轮询组' : '关闭轮询组',
+      SET_POLLING_MEMBER_WEIGHTS: '调整成员权重',
+      ADD_POLLING_MEMBER: '添加备用通道', REMOVE_POLLING_MEMBER: '移除轮询成员',
+    }[command.action];
+    await queueNotification(tx, 'ADJUSTMENT', adjustment.id, 'STRATEGY_TRIGGERED', adjustment.id, {
+      type: 'STRATEGY', title: '站点策略已触发 · 待执行', routes: ['STRATEGY_TRIGGERED'], subject: site.name,
+      lines: [`策略组：${group.name}`, `命中规则：${ruleDescription}`,
+        `观测：${orderCount} 笔订单 · 成功率 ${successRate}% · 失败率 ${failureRate}% · ${channelCount} 条通道`,
+        `目标：${targetName}`, `计划动作：${actionName}`, `调整记录：${adjustment.id}`],
+    });
+  }
   await tx.strategyTarget.update({
     where: { id: executionTarget.id },
     data: { lastTriggeredAt: now },

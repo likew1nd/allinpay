@@ -17,12 +17,22 @@ const testing = reactive(new Set<string>());
 // 测试发送成功后记下这次的消息编号，按钮随之变成「撤销测试」。
 const tests = reactive(new Map<string, string[]>());
 const availableIds = computed(() => new Set(props.targets.filter(target => target.enabled && target.verified).map(target => target.id)));
+const recoveryKey = 'ACCOUNT_RESTRICTION_RECOVERED';
+const restrictionKeys = ['ACCOUNT_RESTRICTION', 'ACCOUNT_JUDICIAL'];
 const groups = computed(() => {
   const current = routes.value.map(route => pending.get(route.key) ?? route);
-  const primary = current.filter(route => route.kind === 'direct' || ['ACCOUNT_RESTRICTION', 'ACCOUNT_JUDICIAL'].includes(route.key));
+  const restrictions = routes.value.filter(route => restrictionKeys.includes(route.key));
+  const recovery = current.find(route => route.key === recoveryKey);
+  const primary = current.filter(route => route.key !== recoveryKey && (route.kind === 'direct' || restrictionKeys.includes(route.key)));
+  if (recovery?.kind === 'direct') {
+    primary.push(recovery.inheritsRestrictionTargets ? {
+      ...recovery,
+      targetIds: [...new Set(restrictions.flatMap(route => route.targetIds ?? []))]
+    } : recovery);
+  }
   return [
     { title: '资金与转账', routes: primary },
-    { title: '运行异常', routes: current.filter(route => !primary.includes(route)) }
+    { title: '运行异常', routes: current.filter(route => route.key !== recoveryKey && !primary.includes(route)) }
   ];
 });
 
@@ -70,7 +80,7 @@ function changeTargets(key: string, targetIds: string[] | null) {
   const saved = routes.value.find(route => route.key === key);
   const route = pending.get(key) ?? saved;
   if (!route || targetIds === null) return;
-  if (route.kind === 'direct') pending.set(key, { ...route, targetIds });
+  if (route.kind === 'direct') pending.set(key, { ...route, targetIds, inheritsRestrictionTargets: false });
   else {
     const recipients = targetIds.map(targetId => {
       const previous = route.recipients.find(item => item.targetId === targetId)

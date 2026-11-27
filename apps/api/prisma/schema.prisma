@@ -417,6 +417,8 @@ model ScriptSetting {
   balanceFreshMinutes      Int      @default(10) @map("balance_fresh_minutes")
   // 扫码确认：二维码发出后最多等待的分钟数，超时本笔转账按失败结束
   qrWaitMinutes            Int      @default(8) @map("qr_wait_minutes")
+  closeRestrictedChannels Boolean  @default(false) @map("close_restricted_channels")
+  restoreRecoveredChannels Boolean @default(false) @map("restore_recovered_channels")
   // 滑块识别坐标的固定补偿像素；负值表示回退。默认 +10，修正"少滑一点"的偏差。
   sliderOffsetPx              Int      @default(10) @map("slider_offset_px")
   captchaProvider             String   @default("NONE") @map("captcha_provider") @db.VarChar(32)
@@ -457,6 +459,8 @@ model Account {
   // 登录后巡检得到的限制标记：两项可同时为真；businessStatus 是兼容用的单值（司法优先）
   restrictionActive     Boolean               @default(false) @map("restriction_active")
   judicialActive        Boolean               @default(false) @map("judicial_active")
+  restrictionObservedAt DateTime?             @map("restriction_observed_at")
+  restrictionClearedAt  DateTime?             @map("restriction_cleared_at")
   // 页面上收款/付款额度显示为“不限额”时为 true，此时对应的额度数值字段无意义
   receiptUnlimited      Boolean               @default(false) @map("receipt_unlimited")
   paymentUnlimited      Boolean               @default(false) @map("payment_unlimited")
@@ -1224,8 +1228,41 @@ model NotificationEvent {
   createdAt     DateTime @default(now())
   expandedAt    DateTime?
   skippedReason String?
+  payload       Json?
   @@index([expandedAt, createdAt])
   @@map("notification_event")
+}
+
+model RestrictionChannelHold {
+  channelId     String   @id @map("channel_id")
+  accountId     String   @map("account_id")
+  appId         String   @map("app_id")
+  fingerprint   String   @db.Char(64)
+  state         String
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([accountId, state])
+  @@map("restriction_channel_hold")
+}
+
+model RestrictionChannelJob {
+  id          String   @id
+  accountId   String   @map("account_id")
+  action      String
+  source      String
+  eventTypes  Json     @map("event_types")
+  evidence    Json?
+  results     Json?
+  notifiedResults Json? @map("notified_results")
+  nextAt      DateTime @default(now()) @map("next_at")
+  completedAt DateTime? @map("completed_at")
+  leaseUntil  DateTime? @map("lease_until")
+  leaseOwner  String?  @map("lease_owner")
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([completedAt, nextAt])
+  @@map("restriction_channel_job")
 }
 
 model TelegramDelivery {

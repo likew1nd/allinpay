@@ -115,7 +115,7 @@ export class TransferService {
       const owner = await tx.account.findUnique({ where: { id }, select: { collectorId: true } });
       if (owner?.collectorId) await tx.$queryRaw(Prisma.sql`SELECT id FROM collector WHERE id = ${owner.collectorId} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`SELECT id FROM account WHERE id = ${id} FOR UPDATE`);
-      const account = await tx.account.findUnique({ where: { id } });
+      const account = await tx.account.findUnique({ where: { id }, include: { credentials: { select: { paymentPasswordEncrypted: true } } } });
       if (!account?.collectorId || !account.profilePresent) throw new NotFoundException('环境不存在或未关联采集端');
       if (account.collectorId !== owner?.collectorId) throw new ConflictException('环境归属已变化，请刷新后重试');
       if (dto.ruleId) {
@@ -127,6 +127,9 @@ export class TransferService {
       const listed = dto.listed ?? account.transferListed;
       if (dto.enabled === true && !listed) throw new ConflictException('请先在环境列表开启自动转账');
       const enabled = listed && (dto.enabled ?? (dto.listed !== undefined ? dto.listed : account.transferEnabled));
+      if (enabled && (dto.enabled !== undefined || dto.listed !== undefined) && !account.credentials?.paymentPasswordEncrypted) {
+        throw new ConflictException('请先为该环境设置支付密码，再开启自动转账');
+      }
       // 旧入口只有转账权限；需要联动监控时，必须走同时校验两种权限的模式接口。
       if (enabled && (dto.enabled !== undefined || dto.listed !== undefined) && !account.monitoringEnabled) {
         throw new ConflictException('请先在环境列表选择转账模式');
@@ -327,9 +330,10 @@ export class TransferService {
   async evaluateAccount(accountId: string, now = new Date()) {
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM account WHERE id = ${accountId} FOR UPDATE`);
-      const account = await tx.account.findUnique({ where: { id: accountId }, include: { transferRule: true } });
+      const account = await tx.account.findUnique({ where: { id: accountId }, include: { transferRule: true, credentials: { select: { paymentPasswordEncrypted: true } } } });
       const rule = account?.transferRule;
       if (!account?.transferEnabled || !account.monitoringEnabled || !account.profilePresent || !account.collectorId || !rule?.enabled || rule.isTemplate || rule.mode !== 'AUTO') return { skipped: 'DISABLED' };
+      if (!account.credentials?.paymentPasswordEncrypted) return { skipped: 'PAYMENT_PASSWORD_MISSING' };
       if (account.transferRefreshRequired || account.status !== 'HEALTHY') return { skipped: 'WAITING_REFRESH' };
       if (account.restrictionActive || account.judicialActive) return { skipped: 'RESTRICTED' };
       if (!account.balance || !account.balanceAt) return { skipped: 'NO_BALANCE' };
@@ -537,6 +541,7 @@ export class TransferService {
       if (transfers >= MAX_CONCURRENT_TRANSFERS) return { transfer: null, reason: 'BUSY' };
       // 转账测试单不要求环境开启自动转账，也不依赖策略和收款人库，其余条件（串行、余额、受限）与自动单一致
       const accountFilter = (test: boolean) => ({ collectorId, profilePresent: true, ...(test ? {} : { transferEnabled: true, monitoringEnabled: true }),
+        credentials: { is: { paymentPasswordEncrypted: { not: null } } },
         transferRefreshRequired: false, OR: [{ scriptLeaseUntil: null }, { scriptLeaseUntil: { lt: new Date() } }],
         transfers: { none: { status: { in: [...EXECUTING_TRANSFER_STATUSES, 'UNKNOWN', 'NEEDS_MANUAL'] } } } });
       const claimInclude = { account: { include: { credentials: true } }, payee: { include: { pool: true } }, rule: true } as const;
@@ -557,6 +562,7 @@ export class TransferService {
         candidate.account.transferRefreshRequired || (candidate.account.scriptLeaseUntil && candidate.account.scriptLeaseUntil > new Date()))
         return { transfer: null, reason: 'TAKEN' };
       const account = candidate.account;
+      if (!account.credentials?.paymentPasswordEncrypted) return { transfer: null, reason: 'INVALIDATED' };
       if (!isTest && (!candidate.rule?.enabled || candidate.payee?.status !== 'ACTIVE' || candidate.payee?.pool?.enabled === false)) {
         await tx.transferRequest.update({ where: { id: candidate.id }, data: { status: 'CANCELLED', completedAt: new Date(), resultNote: '策略或收款账号已停用' } });
         return { transfer: null, reason: 'INVALIDATED' };
@@ -578,8 +584,7 @@ export class TransferService {
         : { name: candidate.payee!.name, account: decryptSiteSecret(candidate.payee!.id, 'payee-account', candidate.payee!.accountEncrypted) };
       return { transfer: { id: candidate.id, outBizNo: candidate.outBizNo, amount: candidate.amount.toFixed(2), payerExternalId: account.externalId,
         payerLoginAccount: account.credentials?.loginAccount || null, mode: isTest ? 'TEST' : 'AUTO', remark: isTest ? candidate.testRemark : null, payee,
-        paymentPassword: account.credentials?.paymentPasswordEncrypted
-          ? decryptSiteSecret(account.id, 'account-payment-password', account.credentials.paymentPasswordEncrypted) : null }, reason: null };
+        paymentPassword: decryptSiteSecret(account.id, 'account-payment-password', account.credentials.paymentPasswordEncrypted) }, reason: null };
     }, { timeout: 20000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 

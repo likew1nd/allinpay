@@ -3,6 +3,8 @@ import { request } from '../request';
 export type CollectorStatus = 'ONLINE' | 'OFFLINE' | 'ERROR';
 export type CaptchaProvider = 'NONE' | 'TTSHITU' | 'BINGTOP';
 export interface ScriptSettings {
+  closeRestrictedChannels: boolean;
+  restoreRecoveredChannels: boolean;
   loginCooldownMinutes: number;
   loginMaxAttempts: number;
   loginTimeoutMinutes: number;

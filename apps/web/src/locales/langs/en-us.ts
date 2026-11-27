@@ -216,6 +216,11 @@ const local: App.I18n.Schema = {
   },
   page: {
     scriptSettings: {
+      closeRestrictedChannels: 'Close linked channels when an account is restricted',
+      closeRestrictedChannelsHint: 'Saving this setting checks currently restricted accounts immediately. Future inspections close enabled channels linked to accounts with merchant or judicial restrictions.',
+      restoreRecoveredChannels: 'Reopen channels after restrictions clear',
+      restrictionAutomationSaved: 'Settings saved. Processing eligible channels.',
+      restoreRecoveredChannelsHint: 'Saving this setting immediately checks channels eligible for recovery. Once an inspection confirms both restrictions have cleared, the system reopens channels it closed that have no other reason to stay closed.',
       monitorDescription: 'Collectors patrol independently. Set how many environments each collector polls at once.',
       pollingMode: 'Polling mode',
       serialPolling: 'Serial',

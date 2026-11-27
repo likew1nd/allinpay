@@ -437,6 +437,11 @@ declare namespace App {
       route: Record<string, string>;
       page: {
         scriptSettings: {
+          closeRestrictedChannels: string;
+          closeRestrictedChannelsHint: string;
+          restoreRecoveredChannels: string;
+          restrictionAutomationSaved: string;
+          restoreRecoveredChannelsHint: string;
           monitorDescription: string;
           pollingMode: string;
           serialPolling: string;

@@ -18,5 +18,6 @@ export const agentSettingsFields = {
 
 export const publicSettingsFields = {
   ...agentSettingsFields, ...captchaSettingsFields, id: true, loginCooldownMinutes: true, balanceFreshMinutes: true,
+  closeRestrictedChannels: true, restoreRecoveredChannels: true,
   createdAt: true, updatedBy: true,
 } as const;

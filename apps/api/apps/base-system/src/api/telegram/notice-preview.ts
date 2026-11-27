@@ -4,6 +4,9 @@ import { formatIncidentNotice } from '../notification/notification.types';
 import { formatTransferQr, formatTransferResult } from '../transfer/transfer-notice';
 import { formatChannelNotice } from './channel-notice';
 import { digestParts, Environment, formatEnvironmentAlert, renderDigest } from './environment-notice';
+import { resultNoticeParts } from './result-notice';
+import { recoveryNoticeKey } from './notification-routing';
+import { EMPTY_SCOPE } from './telegram-policy';
 
 const test = '【测试发送】\n';
 const transfer = {
@@ -124,6 +127,20 @@ export function noticePreview(key: string, label: string, at: Date, template?: s
     return [{ kind: 'TRANSFER_QR_TEST', text: test + '演示码仅包含测试文字。\n' + formatTransferQr(transfer, 8, expiry), image: qrImage() }];
   }
   if (key === 'TRANSFER') return [{ kind: 'TRANSFER_RESULT_TEST', text: test + formatTransferResult(transfer, 'SUCCEEDED'), image: transferResultImage() }];
+  if (key === 'STRATEGY_TRIGGERED') {
+    return resultNoticeParts({
+      type: 'STRATEGY', title: '站点策略已触发 · 待执行', subject: '演示站点', routes: [key],
+      lines: ['策略组：演示策略组', '命中规则：近 10 分钟成功率低于 60%', '目标：通道 101', '计划动作：关闭通道', '调整记录：DEMO-ADJUSTMENT-001'],
+    }, { ...EMPTY_SCOPE, all: true }, [key], at).map(({ kind, text }) => ({ kind: kind + '_TEST', text: test + text }));
+  }
+  if (key === recoveryNoticeKey) {
+    return resultNoticeParts({
+      type: 'RECOVERY', title: '账号已解除限制', subject: '演示环境 019',
+      routes: ['ACCOUNT_RESTRICTION', 'ACCOUNT_JUDICIAL'], source: '巡检确认解除限制',
+      results: [{ siteId: 'demo', siteName: '演示站点', code: '101', name: '支付宝演示通道', status: 'OPENED' }],
+    }, { ...EMPTY_SCOPE, all: true }, ['ACCOUNT_RESTRICTION', 'ACCOUNT_JUDICIAL'], at)
+      .map(({ kind, text }) => ({ kind: kind === 'RESTRICTION_RECOVERY_CARD' ? kind + '_TEST' : 'RESTRICTION_DETAILS_TEST', text: test + text }));
+  }
   const phase = repeats ? 'REMIND' : 'OPEN';
   if (key.startsWith('ACCOUNT_')) {
     const image = key === 'ACCOUNT_RESTRICTION' || key === 'ACCOUNT_JUDICIAL' ? evidenceImage(key === 'ACCOUNT_JUDICIAL') : null;

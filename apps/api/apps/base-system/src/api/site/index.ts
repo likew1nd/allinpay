@@ -9,6 +9,6 @@ import { SiteChannelController } from './site-channel.controller';
 @Module({
   controllers: [SiteController, SiteChannelController],
   providers: [SiteService, SiteDataService, SiteChannelService],
-  exports: [SiteService, SiteDataService],
+  exports: [SiteService, SiteDataService, SiteChannelService],
 })
 export class SiteModule {}

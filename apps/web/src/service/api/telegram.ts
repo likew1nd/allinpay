@@ -13,7 +13,7 @@ export interface TelegramTarget {
 }
 export interface TelegramNoticeRecipient { targetId: string; repeatIntervalMinutes: number }
 export type TelegramNoticeRoute = { key: string; label: string; icon: string } & (
-  | { kind: 'direct'; targetIds: string[] | null }
+  | { kind: 'direct'; targetIds: string[] | null; inheritsRestrictionTargets?: boolean }
   | { kind: 'event'; targetIds: string[]; repeatIntervalMinutes: number | null; recipients: TelegramNoticeRecipient[] }
 );
 export interface TelegramBinding {

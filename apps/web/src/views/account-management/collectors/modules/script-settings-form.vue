@@ -19,6 +19,8 @@ const ttshituPassword = ref('');
 const bingtopPassword = ref('');
 
 const defaultSettings: ScriptSettings = {
+  closeRestrictedChannels: false,
+  restoreRecoveredChannels: false,
   loginCooldownMinutes: 10,
   loginMaxAttempts: 3,
   loginTimeoutMinutes: 3,
@@ -119,8 +121,11 @@ const rules = {
   maxRefreshSeconds: [{ required: true, message: '请输入最大刷新间隔', trigger: 'change' }]
 };
 
+let savedAutomation = { closeRestrictedChannels: false, restoreRecoveredChannels: false };
+
 function applySettings(settings?: Partial<ScriptSettings> | null) {
   Object.assign(form, defaultSettings, settings ?? {});
+  savedAutomation = { closeRestrictedChannels: form.closeRestrictedChannels, restoreRecoveredChannels: form.restoreRecoveredChannels };
   lastSavedAt.value = settings?.updatedAt ?? null;
   // 保存或重新加载后清空本地密码输入，密文只在中心保存
   ttshituPassword.value = '';
@@ -179,6 +184,8 @@ async function save() {
   saving.value = true;
   try {
     const result = await updateScriptSettings({
+      closeRestrictedChannels: form.closeRestrictedChannels,
+      restoreRecoveredChannels: form.restoreRecoveredChannels,
       enabled: form.enabled,
       tab1Url: form.tab1Url.trim(),
       tab2Url: form.tab2Url.trim(),
@@ -203,8 +210,10 @@ async function save() {
       ...(bingtopPassword.value ? { bingtopPassword: bingtopPassword.value } : {})
     });
     if (!result.error && !disposed) {
+      const processing = (result.data?.closeRestrictedChannels && !savedAutomation.closeRestrictedChannels) ||
+        (result.data?.restoreRecoveredChannels && !savedAutomation.restoreRecoveredChannels);
       applySettings(result.data);
-      window.$message?.success('脚本设置已保存');
+      window.$message?.success(processing ? $t('page.scriptSettings.restrictionAutomationSaved') : '脚本设置已保存');
     }
   } finally {
     saving.value = false;
@@ -331,6 +340,14 @@ onMounted(load);
                 >
                   {{ refreshRangeHint }}。
                 </p>
+                <ElFormItem :label="$t('page.scriptSettings.closeRestrictedChannels')">
+                  <ElSwitch v-model="form.closeRestrictedChannels" :aria-label="$t('page.scriptSettings.closeRestrictedChannels')" />
+                </ElFormItem>
+                <p class="settings-hint m-0 mb-20px">{{ $t('page.scriptSettings.closeRestrictedChannelsHint') }}</p>
+                <ElFormItem :label="$t('page.scriptSettings.restoreRecoveredChannels')">
+                  <ElSwitch v-model="form.restoreRecoveredChannels" :aria-label="$t('page.scriptSettings.restoreRecoveredChannels')" />
+                </ElFormItem>
+                <p class="settings-hint m-0 mb-20px">{{ $t('page.scriptSettings.restoreRecoveredChannelsHint') }}</p>
                 <ElFormItem :label="$t('page.scriptSettings.environmentSyncMinutes')" prop="environmentSyncMinutes">
                   <ElInputNumber
                     v-model="form.environmentSyncMinutes"

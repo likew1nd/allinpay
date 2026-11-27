@@ -144,6 +144,8 @@ export class BatchRefreshAppIdsDto {
 
 /** 平台密码仅中心使用，普通读取接口只返回是否已配置。 */
 export class UpdateScriptSettingsDto {
+  @ValidateIf((_object, value) => value !== undefined) @IsBoolean() closeRestrictedChannels?: boolean;
+  @ValidateIf((_object, value) => value !== undefined) @IsBoolean() restoreRecoveredChannels?: boolean;
   @ValidateIf((_object, value) => value !== undefined) @Type(() => Number) @IsInt() @Min(1) @Max(1440) loginCooldownMinutes?: number;
   @ValidateIf((_object, value) => value !== undefined) @Type(() => Number) @IsInt() @Min(1) @Max(5) loginMaxAttempts?: number;
   @ValidateIf((_object, value) => value !== undefined) @Type(() => Number) @IsInt() @Min(1) @Max(60) loginTimeoutMinutes?: number;

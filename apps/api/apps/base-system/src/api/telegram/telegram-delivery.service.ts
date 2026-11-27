@@ -7,6 +7,7 @@ import type { CallbackQuery, InlineKeyboardMarkup } from 'grammy/types';
 import { PrismaService } from '@lib/shared/prisma/prisma.service';
 import { formatQrVoid, missingTransferScreenshot, transferPhotoKey, transferResultKey } from '../transfer/transfer-notice';
 import { formatIncidentNotice, hash } from '../notification/notification.types';
+import type { NotificationPayload } from '../notification/notification.service';
 import { readIds, readScope, safeTelegramError } from './telegram-policy';
 import { TelegramAuthService } from './telegram-auth.service';
 import { TelegramCommandService } from './telegram-command.service';
@@ -16,6 +17,7 @@ import { environmentCard } from './environment-card';
 import { alertCaption, noticeCaption, NoticeImageOptions, renderNoticeImage, THEME_BLUE, THEME_ORANGE, THEME_RED, THEME_TEAL } from './notice-image';
 import { summaryPrefix, renderEnvironmentAlert, renderSummary } from './environment-notice';
 import { eventCardRoute, transferNoticePrefixes } from './notification-routing';
+import { resultNoticeKey, resultNoticeParts, resultNoticeRoutes } from './result-notice';
 
 // 转账二维码排队超过扫码等待时长（脚本设置 qrWaitMinutes，取不到时用此默认分钟数）仍未发出就作废，避免晚到的二维码误导群成员
 const DEFAULT_QR_WAIT_MINUTES = 8;
@@ -30,8 +32,13 @@ const ALERT_IMAGE: NoticeImageOptions = { title: '运行异常', english: 'INCID
 const ALERT_IMAGE_KINDS = new Set(['ENV_ALERT', 'ENV_ALERT_TEST', 'ENV_ALERT_PREVIEW', 'NOTICE', 'NOTICE_ROUTE_TEST']);
 // 二维码作废卡片：红色主题，替换原二维码图片，让群里不再留着一张还能扫的图。
 const VOID_IMAGE: NoticeImageOptions = { title: '二维码作废', english: 'QR  VOIDED', fig: 'FIG. 04', theme: THEME_RED, single: true };
+const RESULT_CARDS: Record<string, NoticeImageOptions> = {
+  RESTRICTION_CLOSE_CARD: { title: '账号受限', english: 'ACCOUNT RESTRICTION', fig: 'FIG. 05', theme: THEME_RED, single: true },
+  RESTRICTION_RECOVERY_CARD: { title: '账号恢复', english: 'ACCOUNT RECOVERY', fig: 'FIG. 06', theme: THEME_TEAL, single: true },
+  STRATEGY_TRIGGER_CARD: { title: '站点策略触发', english: 'SITE STRATEGY', fig: 'FIG. 07', theme: THEME_BLUE, single: true },
+};
 // 后台「测试发送」产生的消息类型：优先出队，并允许「撤销测试」。
-export const TEST_KINDS = ['TEST', 'TRANSFER_QR_TEST', 'TRANSFER_RESULT_TEST', 'ENV_SUMMARY_TEST', 'ENV_SUMMARY_PREVIEW', 'ENV_ALERT_TEST', 'ENV_ALERT_PREVIEW', 'NOTICE_ROUTE_TEST', 'CHANNEL_TEST'];
+export const TEST_KINDS = ['TEST', 'TRANSFER_QR_TEST', 'TRANSFER_RESULT_TEST', 'ENV_SUMMARY_TEST', 'ENV_SUMMARY_PREVIEW', 'ENV_ALERT_TEST', 'ENV_ALERT_PREVIEW', 'NOTICE_ROUTE_TEST', 'CHANNEL_TEST', 'STRATEGY_TRIGGER_CARD_TEST', 'RESTRICTION_RECOVERY_CARD_TEST', 'RESTRICTION_DETAILS_TEST'];
 const CARD_IMAGE_KINDS: Record<string, NoticeImageOptions> = {
   ENV_SUMMARY: ENV_IMAGE,
   ENV_SUMMARY_TEST: ENV_IMAGE,
@@ -54,10 +61,24 @@ export class TelegramDeliveryService {
         return;
       }
       const incident = await tx.notificationIncident.findUnique({ where: { id: event.incidentId } });
-      if (!incident || incident.recoveredAt || event.phase === 'RECOVER') return;
-      const cardRoute = incident.entityType === 'ACCOUNT' ? await eventCardRoute(tx, incident.eventType) : null;
+      if (!incident || (!event.payload && (incident.recoveredAt || event.phase === 'RECOVER'))) return;
+      const payload = event.payload as unknown as NotificationPayload | null;
+      const cardRoute = !payload && incident.entityType === 'ACCOUNT' ? await eventCardRoute(tx, incident.eventType) : null;
       const targets = await tx.telegramTarget.findMany({ where: { botId: bot.botId!, enabled: true, archived: false, verified: true, ...(event.targetId ? { id: event.targetId } : {}) } });
       for (const target of targets) {
+        if (payload) {
+          const scope = readScope(target.scope);
+          const routes = await resultNoticeRoutes(tx, payload, target.id);
+          if (!routes.length || !await this.auth.entityAllowed(incident.entityType, incident.entityId, [scope], undefined, tx)) continue;
+          for (const part of resultNoticeParts(payload, scope, routes, event.createdAt)) {
+            const dedupeKey = resultNoticeKey(event.id, target.id, part.key);
+            await tx.telegramDelivery.upsert({ where: { dedupeKey }, create: {
+              id: randomUUID(), botId: bot.botId!, epoch: bot.dispatchEpoch, eventId: event.id, incidentId: incident.id,
+              targetId: target.id, chatId: target.chatId, threadKey: target.threadKey, kind: part.kind, text: part.text, dedupeKey,
+            }, update: {} });
+          }
+          continue;
+        }
         const subscription = await tx.telegramSubscription.findUnique({ where: { targetId_eventType: { targetId: target.id, eventType: incident.eventType } } });
         const inherited = !cardRoute?.explicit && cardRoute?.ids.includes(target.id);
         if (!inherited && !subscription?.enabled) continue;
@@ -179,6 +200,18 @@ export class TelegramDeliveryService {
 
   // 带图片的投递（转账二维码）用 sendPhoto，文字作为图注（Telegram 图注上限 1024 字）；其余照旧 sendMessage
   private async dispatch(api: Api, row: TelegramDelivery, text: string, options: { message_thread_id?: number; reply_markup?: InlineKeyboardMarkup }) {
+    const resultCard = RESULT_CARDS[(row.kind ?? '').replace(/_TEST$/, '')];
+    if (resultCard) {
+      const image = renderNoticeImage(text, resultCard);
+      if (image?.format === 'png' && text.length <= 1024) {
+        try {
+          return await api.sendPhoto(row.chatId, new InputFile(image.data, 'notice.png'), { ...options, caption: text });
+        } catch (error) {
+          if ((error as { error_code?: number }).error_code !== 400) throw error;
+        }
+      }
+      return api.sendMessage(row.chatId, text, options);
+    }
     // 二维码作废：优先把原二维码消息编辑成作废卡片；编辑失败（消息已删除、内容未变等）就发一张新的作废卡片，再不行才发文字。
     if (row.kind === 'TRANSFER_QR_VOID') {
       if (row.messageId) {
@@ -220,8 +253,16 @@ export class TelegramDeliveryService {
     }
     if (!row.image) return api.sendMessage(row.chatId, text, options);
     const bytes = Buffer.from(row.image.slice(row.image.indexOf(',') + 1), 'base64');
-    const name = row.kind?.startsWith('ENV_ALERT') ? 'environment' : row.kind?.startsWith('TRANSFER_QR') ? 'qr' : 'transfer-result';
+    const name = row.kind?.startsWith('ENV_ALERT') || row.kind === 'RESTRICTION_EVIDENCE' ? 'environment' : row.kind?.startsWith('TRANSFER_QR') ? 'qr' : 'transfer-result';
     const extension = row.image.startsWith('data:image/png;') ? 'png' : 'jpg';
+    if (row.kind === 'RESTRICTION_EVIDENCE') {
+      try {
+        return await api.sendPhoto(row.chatId, new InputFile(bytes, `${name}.${extension}`), { ...options, caption: text.slice(0, 1024) });
+      } catch (error) {
+        if ((error as { error_code?: number }).error_code !== 400) throw error;
+        return api.sendMessage(row.chatId, `${text}\n巡检截图上传失败`, options);
+      }
+    }
     return api.sendPhoto(row.chatId, new InputFile(bytes, `${name}.${extension}`), { ...options, caption: text.slice(0, 1024) });
   }
 
@@ -331,6 +372,15 @@ export class TelegramDeliveryService {
       const incident = await this.prisma.notificationIncident.findUnique({ where: { id: row.incidentId } });
       const event = await this.prisma.notificationEvent.findUnique({ where: { id: row.eventId } });
       if (!incident || !event || !await this.auth.entityAllowed(incident.entityType, incident.entityId, [readScope(target.scope)])) { await this.cancel(row.id, '对象不再属于允许范围'); return null; }
+      if (event.payload) {
+        const payload = event.payload as unknown as NotificationPayload;
+        const routes = await resultNoticeRoutes(this.prisma, payload, target.id);
+        const part = routes.length && resultNoticeParts(payload, readScope(target.scope), routes, event.createdAt)
+          .find(item => resultNoticeKey(event.id, target.id, item.key) === row.dedupeKey);
+        if (!part) { await this.cancel(row.id, '通知接收范围已变更'); return null; }
+        row.image = part.image ?? null;
+        return part.text;
+      }
       if (incident.recoveredAt || event.phase === 'RECOVER') { await this.cancel(row.id, '异常已恢复'); return null; }
       const cardRoute = incident.entityType === 'ACCOUNT' ? await eventCardRoute(this.prisma, incident.eventType) : null;
       const inherited = !cardRoute?.explicit && cardRoute?.ids.includes(target.id);

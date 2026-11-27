@@ -7,12 +7,15 @@ export const EVENT_LABELS: Record<string, string> = {
   ACCOUNT_CAPTCHA_REQUIRED: '账号需要验证码', ACCOUNT_ENV_UNAVAILABLE: '环境不可用',
   ACCOUNT_COLLECTION_FAILED: '页面采集失败', COLLECTOR_OFFLINE: '采集端离线',
   STRATEGY_EXECUTION_FAILED: '策略执行失败',
+  STRATEGY_TRIGGERED: '站点策略触发',
+  ACCOUNT_RESTRICTION_RECOVERED: '账号已解除限制',
 };
 export const noticeIcons: Record<string, string> = {
   CHANNEL_NOTICE: '🚦', ENV_SUMMARY: '📋', TRANSFER: '💸', TRANSFER_QR: '📲',
   ACCOUNT_RESTRICTION: '🔒', ACCOUNT_JUDICIAL: '⚖️', ACCOUNT_LOGIN_REQUIRED: '🔑',
   ACCOUNT_PASSWORD_REJECTED: '⛔', ACCOUNT_CAPTCHA_REQUIRED: '🧩', ACCOUNT_ENV_UNAVAILABLE: '🔌',
   ACCOUNT_COLLECTION_FAILED: '⚠️', COLLECTOR_OFFLINE: '📡', STRATEGY_EXECUTION_FAILED: '❌',
+  STRATEGY_TRIGGERED: '⚙️', ACCOUNT_RESTRICTION_RECOVERED: '🔓',
 };
 
 export function incidentHeading(type: string, title: string, phase: string) {

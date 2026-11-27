@@ -404,23 +404,45 @@ export class SiteChannelService implements OnModuleDestroy {
     return this.mutate(siteId, code, async (connection, site, row) => {
       if (Number(row.status) !== dto.expectedStatus)
         throw new ConflictException('通道状态已变化，请刷新后重试');
-      await connection.query({
-        sql: `UPDATE ${mysql.escapeId(site.tablePrefix + 'channel')} SET status=? WHERE id=?`,
-        values: [dto.status, code],
-        timeout: 10000,
-      });
-      return {
-        sourceStatus: dto.status,
-        dayStatus: Number(row.daystatus),
-        status:
-          dto.status === 1 && Number(row.daystatus) === 0
-            ? ('ENABLED' as const)
-            : ('DISABLED' as const),
-        auditChanges: changedFields([
-          { field: 'status', before: Number(row.status), after: dto.status },
-        ]),
-      };
+      if (dto.status === 0) await this.blockRestrictionRestore(siteId, code);
+      return this.writeStatus(connection, site, row, code, dto.status);
     });
+  }
+
+  async blockRestrictionRestore(siteId: string, code: string) {
+    await this.prisma.restrictionChannelHold.updateMany({
+      where: { channelId: `${siteId}:channel:${code}`, state: { in: ['CLOSED', 'CLOSING', 'RESTORING'] } },
+      data: { state: 'BLOCKED' },
+    });
+  }
+
+  async restrictionStatus(siteId: string, code: string, status: 0 | 1, decide: (channel: {
+    sourceStatus: number; dayStatus: number; appId: string; fingerprint: string;
+  }) => Promise<boolean>, confirm: () => Promise<void>, rollback: () => Promise<void>) {
+    return this.mutate(siteId, code, async (connection, site, row) => {
+      const appId = parseChannelConfig(row.config).appid;
+      const { status: _status, daystatus: _daystatus, __engine: _engine, ...identity } = row;
+      const fingerprint = channelRevision(identity, `${siteId}:${site.syncRevision}`);
+      if (!(await decide({
+        sourceStatus: Number(row.status), dayStatus: Number(row.daystatus),
+        appId: typeof appId === 'string' ? appId.trim() : '', fingerprint,
+      }))) return {};
+      return { ...await this.writeStatus(connection, site, row, code, status), afterCommit: confirm };
+    }, rollback);
+  }
+
+  private async writeStatus(connection: mysql.Connection, site: EpaySite, row: mysql.RowDataPacket, code: string, status: number) {
+    await connection.query({
+      sql: `UPDATE ${mysql.escapeId(site.tablePrefix + 'channel')} SET status=? WHERE id=?`,
+      values: [status, code],
+      timeout: 10000,
+    });
+    return {
+      sourceStatus: status,
+      dayStatus: Number(row.daystatus),
+      status: status === 1 && Number(row.daystatus) === 0 ? ('ENABLED' as const) : ('DISABLED' as const),
+      auditChanges: changedFields([{ field: 'status', before: Number(row.status), after: status }]),
+    };
   }
 
   async configure(siteId: string, code: string, dto: ChannelConfigDto) {
@@ -608,12 +630,15 @@ export class SiteChannelService implements OnModuleDestroy {
       status?: 'ENABLED' | 'DISABLED';
       deleted?: true;
       auditChanges?: LoggedChange[];
+      afterCommit?: () => Promise<void>;
     }>,
+    afterRollback?: () => Promise<void>,
   ) {
     const owner = `channel:${randomUUID()}`;
     await this.acquireLease(siteId, owner);
     let connection: mysql.PoolConnection | undefined;
     let committed = false;
+    let commitStarted = false;
     try {
       const site = await this.site(siteId);
       connection = await this.connection(site);
@@ -637,16 +662,20 @@ export class SiteChannelService implements OnModuleDestroy {
         current.connectionLeaseUntil <= new Date()
       )
         throw new ConflictException('站点配置已变化，请重试');
+      commitStarted = true;
       await connection.commit();
       committed = true;
-      if (result.deleted)
+      await result.afterCommit?.();
+      if (result.deleted) {
+        await this.blockRestrictionRestore(siteId, code);
         await this.prisma.epayChannel.deleteMany({ where: { siteId, code } });
+      }
       else {
         const channel = await this.prisma.epayChannel.findUnique({
           where: { siteId_code: { siteId, code } },
         });
-        const { details, deleted, auditChanges, ...fields } = result;
-        await this.prisma.epayChannel.updateMany({
+        const { details, deleted, auditChanges, afterCommit, ...fields } = result;
+        if (Object.keys(fields).length || details) await this.prisma.epayChannel.updateMany({
           where: { siteId, code },
           data: {
             ...fields,
@@ -687,8 +716,10 @@ export class SiteChannelService implements OnModuleDestroy {
         },
       };
     } catch (error) {
-      if (!committed)
-        await connection?.rollback().catch(() => connection?.destroy());
+      if (!committed && connection) {
+        const rolledBack = await connection.rollback().then(() => true, () => { connection?.destroy(); return false; });
+        if (!commitStarted && rolledBack) await afterRollback?.();
+      }
       if (committed)
         throw new ServiceUnavailableException(
           '原站点已保存，中心列表将在下次同步更新，请勿重复提交',

@@ -11,14 +11,21 @@ export const transferNoticePrefixes = {
   TRANSFER: 'telegram.transfer-result.targets.',
   TRANSFER_QR: 'telegram.transfer-qr.targets.',
 };
+export const strategyTriggerPrefix = 'telegram.strategy-trigger.targets.';
+export const recoveryNoticePrefix = 'telegram.account-recovery.targets.';
+export const recoveryNoticeKey = 'ACCOUNT_RESTRICTION_RECOVERED';
+const restrictionEvents = ['ACCOUNT_RESTRICTION', 'ACCOUNT_JUDICIAL'];
 const directRoutes = {
   CHANNEL_NOTICE: { label: '通道状态通知', prefix: undefined, allByDefault: true },
   ENV_SUMMARY: { label: '环境巡检摘要', prefix: summaryPrefix, allByDefault: false },
   TRANSFER: { label: '自动转账结果', prefix: transferNoticePrefixes.TRANSFER, allByDefault: true },
   TRANSFER_QR: { label: '转账扫码二维码', prefix: transferNoticePrefixes.TRANSFER_QR, allByDefault: true },
+  STRATEGY_TRIGGERED: { label: '站点策略触发', prefix: strategyTriggerPrefix, allByDefault: false },
+  [recoveryNoticeKey]: { label: '账号解除限制', prefix: recoveryNoticePrefix, allByDefault: false },
 };
 const intervalPrefix = 'telegram.event.repeat.';
-const accountEvents = Object.keys(EVENT_LABELS).filter(type => type.startsWith('ACCOUNT_'));
+const routedEvents = Object.entries(EVENT_LABELS).filter(([type]) => !Object.hasOwn(directRoutes, type));
+const accountEvents = routedEvents.map(([type]) => type).filter(type => type.startsWith('ACCOUNT_'));
 const alertEventPrefix = (type: string) => `telegram.environment.event.${type}.targets.`;
 
 export async function eventCardRoute(db: Prisma.TransactionClient, type: string, legacyIds?: string[]) {
@@ -32,10 +39,10 @@ export async function getNotificationRoutes(tx: Prisma.TransactionClient, botId:
   const [subscriptions, legacyIds, ...direct] = await Promise.all([
     tx.telegramSubscription.findMany({ where: { targetId: { in: ids }, enabled: true } }),
     noticeTargets(tx, alertPrefix),
-    ...Object.values(directRoutes).map(async rule => (await noticeTargets(tx, rule.prefix)) ?? (rule.allByDefault ? null : [])),
+    ...Object.values(directRoutes).map(rule => noticeTargets(tx, rule.prefix)),
   ] as const);
   const intervals = await tx.systemSetting.findMany({ where: { key: { startsWith: intervalPrefix } }, select: { key: true, value: true } });
-  const events = await Promise.all(Object.entries(EVENT_LABELS).map(async ([key, label]) => {
+  const events = await Promise.all(routedEvents.map(async ([key, label]) => {
     const card = accountEvents.includes(key);
     const route = card ? await eventCardRoute(tx, key, legacyIds ?? []) : { ids: [], explicit: false };
     const rules = subscriptions.filter(rule => rule.eventType === key);
@@ -49,7 +56,15 @@ export async function getNotificationRoutes(tx: Prisma.TransactionClient, botId:
     const repeatIntervalMinutes = minutes.size > 1 ? null : recipients[0]?.repeatIntervalMinutes ?? Number(intervals.find(row => row.key === intervalPrefix + key)?.value ?? 0);
     return { key, label, icon: noticeIcons[key], repeatIntervalMinutes, kind: 'event' as const, targetIds: recipients.map(item => item.targetId), recipients };
   }));
-  return [...Object.entries(directRoutes).map(([key, rule], index) => ({ key, label: rule.label, icon: noticeIcons[key], kind: 'direct' as const, targetIds: direct[index] })), ...events];
+  const oneTimeRoutes = Object.entries(directRoutes).map(([key, rule], index) => {
+    const base = { key, label: rule.label, icon: noticeIcons[key], kind: 'direct' as const };
+    if (key === recoveryNoticeKey && direct[index] === null) {
+      const targetIds = [...new Set(events.filter(row => restrictionEvents.includes(row.key)).flatMap(row => row.targetIds))];
+      return { ...base, targetIds, inheritsRestrictionTargets: true };
+    }
+    return { ...base, targetIds: direct[index] ?? (rule.allByDefault ? null : []) };
+  });
+  return [...oneTimeRoutes, ...events];
 }
 
 export async function saveNotificationRoute(tx: Prisma.TransactionClient, botId: string | null, key: string, input: unknown) {
@@ -59,7 +74,7 @@ export async function saveNotificationRoute(tx: Prisma.TransactionClient, botId:
     await saveNoticeTargets(tx, botId, readIds(body.targetIds), prefix);
     return;
   }
-  if (!Object.hasOwn(EVENT_LABELS, key)) throw new BadRequestException('通知类型无效');
+  if (!routedEvents.some(([type]) => type === key)) throw new BadRequestException('通知类型无效');
   const body = object(input, ['recipients', 'repeatIntervalMinutes']);
   const interval = body.repeatIntervalMinutes == null ? undefined : integer(body.repeatIntervalMinutes, 0, 10080);
   if (!Array.isArray(body.recipients) || body.recipients.length > 1000) throw new BadRequestException('接收群列表无效');

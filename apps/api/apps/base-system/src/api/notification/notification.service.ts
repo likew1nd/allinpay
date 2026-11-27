@@ -4,11 +4,47 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@lib/shared/prisma/prisma.service';
 import { accountObservations, EVENT_LABELS, hash, Observation } from './notification.types';
 
+export interface AccountChannelResult {
+  siteId: string;
+  siteName: string;
+  name: string;
+  code: string;
+  status: 'CLOSED' | 'OPENED' | 'ALREADY_CLOSED' | 'ALREADY_OPEN' | 'HELD' | 'FAILED' | 'UNCERTAIN';
+  reason?: string;
+}
+
+export interface NotificationPayload {
+  type: 'RESTRICTION' | 'RECOVERY' | 'STRATEGY';
+  title: string;
+  routes: string[];
+  subject: string;
+  source?: string;
+  note?: string;
+  results?: AccountChannelResult[];
+  evidence?: Record<string, string>;
+  lines?: string[];
+}
+
+export async function queueNotification(tx: Prisma.TransactionClient, entityType: string, entityId: string, eventType: string,
+  sourceId: string, payload: NotificationPayload) {
+  const bot = await tx.telegramBot.findUnique({ where: { id: 'default' } });
+  if (!bot?.enabled) return;
+  const eventKey = hash(`result:${entityType}:${entityId}:${eventType}:${sourceId}`);
+  const incidentId = `notice-${eventKey}`;
+  await tx.notificationIncident.upsert({ where: { id: incidentId }, create: {
+    id: incidentId, entityType, entityId, eventType, title: payload.title, recoveredAt: new Date(),
+  }, update: {} });
+  await tx.notificationEvent.upsert({ where: { eventKey }, create: {
+    id: randomUUID(), incidentId, phase: 'RESULT', sourceId, eventKey, telegramEpoch: bot.dispatchEpoch,
+    payload: JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue,
+  }, update: {} });
+}
+
 @Injectable()
 export class NotificationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async observe(tx: Prisma.TransactionClient, entityType: string, entityId: string, sourceId: string, observations: Observation[]) {
+  async observe(tx: Prisma.TransactionClient, entityType: string, entityId: string, sourceId: string, observations: Observation[], defer: string[] = []) {
     const bot = await tx.telegramBot.findUnique({ where: { id: 'default' } });
     const epoch = bot?.enabled ? bot.dispatchEpoch : null;
     for (const observation of observations) {
@@ -27,15 +63,15 @@ export class NotificationService {
       } else if (!observation.active && incident) {
         await tx.notificationIncident.update({ where: { id: incident.id }, data: { activeKey: null, recoveredAt: new Date(), lastObservedAt: new Date() } });
       }
-      if (phase && incident) {
+      if (phase && incident && !defer.includes(observation.eventType)) {
         await tx.notificationEvent.upsert({ where: { eventKey: hash(`${incident.id}:${phase}:${sourceId}:${epoch}`) },
           create: { id: randomUUID(), incidentId: incident.id, phase, sourceId, telegramEpoch: epoch, eventKey: hash(`${incident.id}:${phase}:${sourceId}:${epoch}`) }, update: {} });
       }
     }
   }
 
-  account(tx: Prisma.TransactionClient, id: string, sourceId: string, status: string, inspection?: Parameters<typeof accountObservations>[1]) {
-    return this.observe(tx, 'ACCOUNT', id, sourceId, accountObservations(status, inspection));
+  account(tx: Prisma.TransactionClient, id: string, sourceId: string, status: string, inspection?: Parameters<typeof accountObservations>[1], defer?: string[]) {
+    return this.observe(tx, 'ACCOUNT', id, sourceId, accountObservations(status, inspection), defer);
   }
 
   async scan() {
